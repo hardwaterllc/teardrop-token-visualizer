@@ -1,0 +1,416 @@
+/* Toolbar styles - Dark theme with Teardrop colors */
+/* Floating toolbar on top of canvas */
+.toolbar {
+  position: fixed;
+  top: 20px;
+  left: 300px; /* Sidebar width (280px) + padding */
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 12px;
+  background: var(--background-surface-high, var(--neutral-8));
+  border: 1px solid var(--neutral-7);
+  border-radius: 8px;
+  z-index: 100;
+  font-family: 'Hardwater Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  min-width: fit-content;
+  max-width: calc(100vw - 320px);
+  transition: left 0.3s ease, max-width 0.3s ease;
+  color: var(--text-strong);
+}
+
+.toolbar.has-tokens {
+  padding-right: 16px;
+  align-items: flex-start;
+  transition: left 0.3s ease, max-width 0.3s ease, padding-right 0.4s cubic-bezier(0.16, 1, 0.3, 1), align-items 0.3s ease;
+}
+
+.toolbar.sidebar-collapsed {
+  left: 20px; /* Just padding when sidebar is collapsed */
+  max-width: calc(100vw - 40px);
+}
+
+.toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.toolbar.has-tokens .toolbar-right {
+  align-items: flex-start;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.toolbar-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--background-mod-muted);
+  border: 1px solid var(--background-mod-muted);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  padding: 0;
+  color: var(--text-strong);
+}
+
+.toolbar-btn:hover {
+  background: var(--neutral-7);
+  color: var(--text-strong);
+}
+
+/* Hover states for buttons inside zoom group */
+.toolbar-zoom-group .toolbar-btn:hover {
+  background: var(--neutral-7);
+}
+
+.toolbar-btn:active {
+  background: var(--neutral-6);
+  transform: scale(0.96);
+}
+
+.toolbar-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(114, 70, 255, 0.2);
+  background: var(--neutral-7);
+}
+
+.toolbar-btn svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  color: currentColor;
+}
+
+.toolbar-btn-text {
+  min-width: 48px;
+  height: 32px;
+  padding: 0 10px;
+  font-size: 13px;
+  font-family: ui-monospace, 'Monaco', 'Menlo', 'Courier New', monospace;
+  color: var(--text-default);
+  font-weight: 500;
+  text-align: center;
+}
+
+.toolbar-divider {
+  width: 1px;
+  height: 24px;
+  background: var(--neutral-7);
+  margin: 0 4px;
+}
+
+/* Selected token tags */
+.toolbar-tags {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  max-width: 400px;
+  animation: slideInRight 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.toolbar-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: var(--background-mod-subtle);
+  border: 1px solid var(--neutral-6);
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--text-default);
+  line-height: 1.4;
+  animation: scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.toolbar-tag-text {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toolbar-tag-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 2px;
+  color: var(--text-subtle);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.toolbar-tag-remove:hover {
+  background: var(--neutral-6);
+  color: var(--text-strong);
+}
+
+.toolbar-tag-remove svg {
+  width: 10px;
+  height: 10px;
+}
+
+.toolbar-clear {
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid var(--neutral-6);
+  border-radius: 4px;
+  color: var(--text-default);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.toolbar-clear:hover {
+  background: var(--neutral-7);
+  border-color: var(--neutral-5);
+  color: var(--text-strong);
+}
+
+/* File info and return button */
+.toolbar-file-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--text-default);
+}
+
+.toolbar-file-label {
+  color: var(--text-subtle);
+}
+
+.toolbar-file-name {
+  color: var(--text-default);
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, 'Monaco', 'Menlo', 'Courier New', monospace;
+}
+
+.toolbar-return-btn {
+  min-width: auto;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-default);
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  transition: all 0.15s ease;
+}
+
+.toolbar-return-btn:hover {
+  background: var(--neutral-7);
+  color: var(--text-accent);
+}
+
+.toolbar-return-btn:active {
+  background: var(--neutral-6);
+  transform: scale(0.96);
+}
+
+.toolbar-return-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(114, 70, 255, 0.2);
+  background: var(--neutral-7);
+}
+
+/* Zoom controls - split button group */
+.toolbar-zoom-group {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border: 1px solid var(--border-muted);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--background-mod-muted);
+}
+
+/* Remove borders from all buttons inside zoom group */
+.toolbar-zoom-group .toolbar-btn {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+.toolbar-zoom-group .toolbar-zoom-btn:first-child {
+  border-top-left-radius: 5px;
+  border-bottom-left-radius: 5px;
+}
+
+.toolbar-zoom-group .toolbar-zoom-btn:last-child {
+  border-top-right-radius: 5px;
+  border-bottom-right-radius: 5px;
+}
+
+.toolbar-zoom-group .toolbar-zoom-dropdown {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+/* Zoom dropdown button */
+.toolbar-zoom-dropdown {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Dropdown menu styles */
+.toolbar-dropdown-content {
+  min-width: 180px;
+  background: var(--neutral-8);
+  border: 1px solid var(--neutral-7);
+  border-radius: 6px;
+  padding: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+  font-family: 'Hardwater Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+.toolbar-dropdown-item {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--neutral-2);
+  border-radius: 4px;
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+  gap: 8px;
+}
+
+.toolbar-dropdown-item svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.toolbar-dropdown-item[data-highlighted] {
+  background: var(--background-mod-subtle);
+  color: var(--text-strong);
+}
+
+.toolbar-dropdown-item[data-disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.toolbar-dropdown-separator {
+  height: 1px;
+  background: var(--neutral-7);
+  margin: 4px 0;
+}
+
+.toolbar-dropdown-item[data-state="checked"] {
+  color: var(--text-strong);
+}
+
+.toolbar-dropdown-checkbox {
+  padding-left: 36px;
+  position: relative;
+}
+
+/* Checkbox box - always visible */
+.toolbar-dropdown-checkbox::before {
+  content: '';
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--border-muted);
+  border-radius: 4px;
+  background: transparent;
+  transition: all 0.15s ease;
+}
+
+.toolbar-dropdown-item[data-state="checked"].toolbar-dropdown-checkbox::before {
+  background: var(--purple-5);
+  border-color: var(--purple-5);
+}
+
+/* Checkmark indicator - only visible when checked */
+.toolbar-dropdown-indicator {
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.toolbar-dropdown-indicator svg {
+  width: 16px;
+  height: 16px;
+  color: var(--neutral-1);
+}
+

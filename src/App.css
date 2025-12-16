@@ -1,0 +1,41 @@
+/* App styles - Tokens imported in index.css */
+/* Dark theme with Teardrop colors */
+.app {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--neutral-9);
+  color: var(--neutral-1);
+  font-family: 'Hardwater Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-weight: 500;
+} */
+
+.app-loading {
+  position: fixed;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  background: var(--background-base-lowest);
+  color: var(--neutral-4);
+  font-size: 14px;
+}
+
+.loading-spinner {
+  width: 32px;
+  height: 32px;
+  border: 2px solid var(--neutral-7);
+  border-top-color: var(--purple-5);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

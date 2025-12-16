@@ -1,0 +1,525 @@
+/* Sidebar styles - Dark theme with Teardrop colors */
+.sidebar {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 280px;
+  background: var(--neutral-8);
+  color: var(--neutral-1);
+  border-right: 1px solid var(--neutral-7);
+  z-index: 2;
+  font-family: 'Hardwater Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  transition: transform 0.3s ease, width 0.3s ease;
+  transform: translateX(0);
+}
+
+.sidebar.collapsed {
+  transform: translateX(-100%);
+  width: 0;
+  border-right: none;
+  overflow: hidden;
+}
+
+.sidebar.collapsed section {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sidebar section {
+  position: relative;
+  display: block;
+  padding: 0 20px;
+  transition: opacity 0.3s ease;
+}
+
+.sidebar-top {
+  padding-top: 24px;
+  padding-bottom: 24px;
+  z-index: 1;
+  border-bottom: 1px solid var(--neutral-7);
+}
+
+.sidebar-middle {
+  flex-grow: 1;
+  overflow-y: auto;
+  flex-shrink: 1;
+  z-index: 0;
+  padding-top: 24px;
+}
+
+.sidebar-bottom {
+  bottom: 0;
+  text-align: center;
+  margin: 0;
+  padding: 12px 20px !important;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  border-top: 1px solid var(--border-muted);
+  flex-shrink: 0;
+}
+
+.sidebar-bottom p {
+  margin: 0;
+  padding: 0;
+}
+
+.sidebar-bottom p:first-child {
+  margin-top: 0;
+}
+
+.branding {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  margin: 24px 0;
+  padding-bottom: 0;
+}
+
+.logo {
+  max-width: 200px;
+  width: 100%;
+  height: 32px;
+  background-image: url('logo-dark.svg');
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--neutral-1);
+  flex-shrink: 0;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.branding h1 {
+  margin: 0;
+  padding: 16px 0 0 0;
+  font-size: 16px;
+  width: 100%;
+  text-align: center;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--neutral-1);
+  letter-spacing: -0.01em;
+  border-top: 1px solid var(--neutral-7);
+}
+
+.subtitle {
+  font-size: 11px;
+  color: var(--neutral-4);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 0;
+  padding: 0;
+  font-weight: 500;
+}
+
+.search-container {
+  margin-bottom: 24px;
+}
+
+.search-input {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--neutral-9);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  color: var(--text-strong);
+  font-size: 14px;
+  line-height: 20px;
+  font-family: inherit;
+  transition: all 0.15s ease;
+}
+
+.search-input:hover {
+  border-color: var(--purple-4);
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: var(--purple-4);
+  box-shadow: 0 0 0 3px var(--opacity-purple-40);
+}
+
+.search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.filters-section {
+  margin-bottom: 32px;
+}
+
+.filter-group {
+  margin-bottom: 24px;
+}
+
+.filter-label {
+  display: block;
+  font-size: 14px;
+  color: var(--text-strong);
+  font-weight: 600;
+  margin-bottom: 12px;
+  letter-spacing: -0.01em;
+}
+
+.radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.radio-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--text-default);
+  cursor: pointer;
+  padding: 8px 12px;
+  border-radius: 6px;
+  transition: all 0.15s ease;
+}
+
+.radio-option:hover {
+  background: var(--opacity-purple-40);
+  color: var(--text-strong);
+}
+
+.radio-option input[type="radio"] {
+  margin: 0;
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  border: 1px solid var(--border-muted);
+  border-radius: 50%;
+  background: transparent;
+  position: relative;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.radio-option input[type="radio"]:hover {
+  border-color: var(--purple-5);
+}
+
+.radio-option input[type="radio"]:checked {
+  background: var(--purple-5);
+  border-color: var(--purple-5);
+}
+
+.radio-option input[type="radio"]:checked::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--neutral-1);
+}
+
+.radio-option input[type="radio"]:checked + span {
+  color: var(--text-strong);
+  font-weight: 500;
+}
+
+.radio-option:has(input[type="radio"]:checked) {
+  background: var(--background-mod-subtle);
+  color: var(--text-strong);
+}
+.radio-option:has(input[type="radio"]:checked):hover {
+  background: var(--opacity-purple-40);
+  color: var(--text-strong);
+}
+
+.keyboard-shortcuts {
+  padding: 0;
+}
+
+.keyboard-shortcuts h3 {
+  font-size: 13px;
+  color: var(--text-strong);
+  font-weight: 600;
+  margin: 0 0 12px 0;
+  padding: 0;
+  letter-spacing: -0.01em;
+}
+
+.keyboard-shortcuts ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 12px;
+  color: var(--text-subtle);
+}
+
+.keyboard-shortcuts li {
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.keyboard-shortcuts li > span {
+  flex: 1;
+}
+
+.keyboard-shortcuts li > kbd,
+.keyboard-shortcuts li > span:last-of-type {
+  margin-left: auto;
+}
+
+.keyboard-shortcuts kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  background: var(--neutral-7);
+  border: 1px solid var(--border-muted);
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: ui-monospace, 'Monaco', 'Menlo', 'Courier New', monospace;
+  color: var(--text-default);
+  font-weight: 600;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.3);
+  margin-left: 4px;
+}
+
+.keyboard-shortcuts kbd:first-of-type {
+  margin-right: 4px;
+}
+
+.keyboard-shortcuts kbd + kbd {
+  margin-left: 4px;
+}
+
+.keyboard-shortcuts kbd:last-of-type {
+  margin-right: 0px;
+}
+
+/* Profile Section */
+.sidebar-profile {
+  border-top: 1px solid var(--border-muted);
+  padding: 12px 20px;
+  flex-shrink: 0;
+}
+
+.profile-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+}
+
+.profile-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: var(--purple-5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.profile-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.profile-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow: hidden;
+}
+
+.profile-username {
+  font-size: 14px;
+  color: var(--text-strong);
+  font-weight: 500;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.profile-email {
+  font-size: 12px;
+  color: var(--text-subtle);
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.profile-settings-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text-default);
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.profile-settings-btn:hover {
+  background: var(--background-mod-subtle);
+  color: var(--text-strong);
+}
+
+.profile-settings-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.profile-settings-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--opacity-purple-40);
+}
+
+/* Profile Dropdown */
+.profile-dropdown-content {
+  min-width: 180px;
+  background: var(--background-surface-high, var(--neutral-8));
+  border: 1px solid var(--border-muted);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  z-index: 1000;
+}
+
+.profile-dropdown-label {
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-subtle);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.profile-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 14px;
+  color: var(--text-default);
+  border-radius: 4px;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.15s ease;
+}
+
+.profile-dropdown-item svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.profile-dropdown-item:hover,
+.profile-dropdown-item[data-highlighted] {
+  background: var(--background-mod-subtle);
+  color: var(--text-strong);
+}
+
+.profile-dropdown-item[data-state="checked"] {
+  color: var(--text-strong);
+}
+
+.profile-dropdown-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--border-muted);
+  border-radius: 4px;
+  background: transparent;
+  flex-shrink: 0;
+}
+
+.profile-dropdown-item[data-state="checked"] .profile-dropdown-indicator {
+  background: var(--purple-5);
+  border-color: var(--purple-5);
+}
+
+.profile-dropdown-indicator svg {
+  width: 12px;
+  height: 12px;
+  color: var(--neutral-1);
+  opacity: 0;
+}
+
+.profile-dropdown-item[data-state="checked"] .profile-dropdown-indicator svg {
+  opacity: 1;
+}
+
+.profile-dropdown-separator {
+  height: 1px;
+  background: var(--border-muted);
+  margin: 4px 0;
+}
+
+/* Login Section (when not authenticated) */
+.profile-login-section {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 12px 0;
+}
+
+.profile-login-btn {
+  width: 100%;
+  padding: 10px 16px;
+  background: transparent;
+  border: 1px solid var(--border-muted);
+  border-radius: 6px;
+  color: var(--text-default);
+  font-size: 14px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.profile-login-btn:hover {
+  background: var(--background-mod-subtle);
+  border-color: var(--border-strong);
+  color: var(--text-strong);
+}
+
+.profile-login-btn:active {
+  transform: scale(0.98);
+}
+
+.profile-login-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-subtle);
+  text-align: center;
+  line-height: 1.4;
+}

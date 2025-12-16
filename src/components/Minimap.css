@@ -1,0 +1,45 @@
+/* Minimap styles - Dark theme */
+.minimap-container {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 100;
+  pointer-events: none;
+}
+
+.minimap {
+  position: relative;
+  width: 200px;
+  height: 150px;
+  background: var(--neutral-9);
+  border: 1px solid var(--neutral-7);
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: pointer;
+  pointer-events: auto;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.minimap-content {
+  position: absolute;
+  background: var(--neutral-8);
+  border: 1px solid var(--neutral-6);
+}
+
+.minimap-viewport {
+  position: absolute;
+  background: rgba(114, 70, 255, 0.2);
+  border: 2px solid var(--purple-5);
+  pointer-events: none;
+  box-sizing: border-box;
+}
+
+.minimap-node {
+  position: absolute;
+  width: 2px;
+  height: 2px;
+  background: var(--neutral-4);
+  border-radius: 50%;
+  pointer-events: none;
+}
+

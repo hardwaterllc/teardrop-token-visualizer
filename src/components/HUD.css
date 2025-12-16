@@ -1,0 +1,132 @@
+/* HUD styles - Dark theme with Teardrop colors */
+.hud {
+  position: fixed;
+  top: 0;
+  left: 280px;
+  right: 0;
+  height: 60px;
+  background: var(--neutral-8);
+  border-bottom: 1px solid var(--neutral-7);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 24px;
+  z-index: 10;
+  font-family: 'Hardwater Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.hud-label {
+  font-size: 13px;
+  color: var(--neutral-4);
+  font-weight: 500;
+  flex-shrink: 0;
+  letter-spacing: -0.01em;
+}
+
+.hud-tokens {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex: 1;
+  overflow: hidden;
+}
+
+.hud-token-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: linear-gradient(135deg, var(--purple-5) 0%, var(--purple-6) 100%);
+  color: var(--neutral-1);
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: ui-monospace, 'Monaco', 'Menlo', 'Courier New', monospace;
+  animation: pill-in 0.2s ease-out;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  font-weight: 500;
+}
+
+@keyframes pill-in {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.hud-token-remove {
+  background: none;
+  border: none;
+  color: var(--neutral-1);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+  opacity: 0.8;
+}
+
+.hud-token-remove:hover {
+  background: rgba(255, 255, 255, 0.2);
+  opacity: 1;
+}
+
+.hud-clear {
+  flex-shrink: 0;
+  padding: 8px 16px;
+  background: transparent;
+  border: 1px solid var(--neutral-6);
+  border-radius: 6px;
+  color: var(--neutral-2);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.hud-clear:hover {
+  background: var(--neutral-7);
+  border-color: var(--neutral-5);
+  color: var(--neutral-1);
+}
+
+.hud-hints {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+}
+
+.hud-hint {
+  font-size: 13px;
+  color: var(--neutral-4);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hud-hint kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 7px;
+  background: var(--neutral-7);
+  border: 1px solid var(--neutral-6);
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: ui-monospace, 'Monaco', 'Menlo', 'Courier New', monospace;
+  color: var(--neutral-2);
+  font-weight: 500;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.3);
+}

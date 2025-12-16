@@ -1,0 +1,206 @@
+/* TokenNode styles - Dark theme with Teardrop colors */
+.token-node {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  border-radius: 6px;
+  user-select: none;
+  /* Smooth position transitions for reordering animations, but not during drag */
+  transition: opacity 0.3s ease, border-color 0.15s, box-shadow 0.15s, transform 0.1s ease-out, background 0.15s, left 0.4s cubic-bezier(0.4, 0, 0.2, 1), top 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 1;
+  border: 1px solid var(--neutral-6);
+  background: var(--neutral-8);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  color: var(--neutral-1);
+}
+
+/* Only groups and master groups are draggable */
+.token-node.draggable {
+  cursor: grab;
+}
+
+.token-node.draggable:active {
+  cursor: grabbing;
+}
+
+.token-node.not-draggable {
+  cursor: default;
+}
+
+.token-node:active {
+  cursor: grabbing;
+}
+
+.token-node:hover {
+  border-color: var(--neutral-5);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--neutral-6);
+  background: var(--neutral-7);
+}
+
+.token-node.selected {
+  background: linear-gradient(135deg, var(--purple-5) 0%, var(--purple-6) 100%) !important;
+  border-color: var(--purple-5);
+  box-shadow: 0 2px 8px rgba(114, 70, 255, 0.25), 0 0 0 1px var(--purple-5);
+  color: var(--neutral-1) !important;
+}
+
+.token-node.hovered {
+  border-color: var(--purple-5);
+  box-shadow: 0 2px 6px rgba(114, 70, 255, 0.15), 0 0 0 1px var(--purple-5);
+}
+
+.token-node-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 12px;
+}
+
+/* Wrapper provides checkered background for transparency */
+.token-color-swatch-wrapper {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  border: 1px solid var(--neutral-6);
+  position: relative;
+  overflow: hidden;
+  /* Checkered pattern for transparency - Dark theme */
+  background-image: 
+    linear-gradient(45deg, var(--neutral-6) 25%, transparent 25%),
+    linear-gradient(-45deg, var(--neutral-6) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, var(--neutral-6) 75%),
+    linear-gradient(-45deg, transparent 75%, var(--neutral-6) 75%);
+  background-size: 6px 6px;
+  background-position: 0 0, 0 3px, 3px -3px, -3px 0px;
+  background-color: var(--neutral-7);
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.3);
+}
+
+.token-color-swatch {
+  width: 100%;
+  height: 100%;
+  border-radius: 1px;
+}
+
+.token-node-name {
+  font-size: 13px;
+  font-family: ui-monospace, 'Monaco', 'Menlo', 'Courier New', monospace;
+  color: inherit;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.token-node-value {
+  font-size: 12px;
+  font-family: 'Hardwater Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: inherit;
+  opacity: 0.7;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.token-node-value.monospace {
+  font-family: ui-monospace, 'Monaco', 'Menlo', 'Courier New', monospace;
+}
+
+.token-node-value.token-reference {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.token-node.selected .token-node-value {
+  opacity: 0.95;
+}
+
+.token-node.column-component {
+  background: var(--neutral-8);
+  color: var(--neutral-1);
+}
+
+.token-node.column-semantic {
+  background: var(--neutral-8);
+  color: var(--neutral-1);
+}
+
+.token-node.column-primitive {
+  background: var(--neutral-8) !important;
+  color: var(--neutral-1);
+}
+
+.token-node.group-node {
+  font-weight: 600;
+  border: 1px solid var(--neutral-5);
+  background: var(--neutral-7) !important;
+  cursor: move;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.token-node.group-node:hover {
+  border-color: var(--purple-5);
+  box-shadow: 0 2px 6px rgba(114, 70, 255, 0.3), 0 0 0 1px var(--purple-5);
+  background: var(--neutral-7) !important;
+}
+
+.token-node.master-group {
+  font-weight: 700;
+  font-size: 15px;
+  border: 1px solid var(--purple-5);
+  background: linear-gradient(135deg, rgba(114, 70, 255, 0.2) 0%, rgba(114, 70, 255, 0.25) 100%) !important;
+  cursor: move;
+  padding: 10px 18px;
+  height: 40px;
+  box-shadow: 0 2px 4px rgba(114, 70, 255, 0.3);
+}
+
+.token-node.master-group:hover {
+  border-color: var(--purple-4);
+  box-shadow: 0 4px 8px rgba(114, 70, 255, 0.4), 0 0 0 1px var(--purple-4);
+  background: linear-gradient(135deg, rgba(114, 70, 255, 0.25) 0%, rgba(114, 70, 255, 0.3) 100%) !important;
+}
+
+.token-node.dragging {
+  opacity: 0.9;
+  z-index: 1000;
+  cursor: grabbing;
+  transition: opacity 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.1s ease-out !important;
+  /* Disable position transitions during drag for responsive movement */
+  transition-property: opacity, border-color, box-shadow, transform !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 0 1px var(--purple-5);
+  border-color: var(--purple-5);
+  transform: scale(1.02);
+}
+
+/* Subtle lift on hover for tokens (only when not being dragged) */
+.token-node:not(.dragging):hover {
+  transform: translateY(-1px);
+}
+
+/* Connection dots on left and right sides of nodes */
+.connection-dot {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--purple-5);
+  border: 1px solid var(--border-muted);
+  z-index: 10;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.connection-dot-left {
+  left: -3px;
+}
+
+.connection-dot-right {
+  right: -3px;
+}

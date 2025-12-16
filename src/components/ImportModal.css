@@ -1,0 +1,126 @@
+/* Import Modal Styles */
+.import-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+
+.import-modal {
+  background: var(--neutral-8, #1e1e1e);
+  border: 1px solid var(--neutral-7, #2a2a2a);
+  border-radius: 8px;
+  width: 90%;
+  max-width: 500px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  font-family: 'Hardwater Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+.import-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--neutral-7, #2a2a2a);
+}
+
+.import-modal-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--neutral-1, #ffffff);
+}
+
+.import-modal-close {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--neutral-3, #a0a0a0);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  padding: 0;
+}
+
+.import-modal-close:hover {
+  background: var(--neutral-7, #2a2a2a);
+  color: var(--neutral-1, #ffffff);
+}
+
+.import-modal-close svg {
+  width: 16px;
+  height: 16px;
+}
+
+.import-modal-content {
+  padding: 24px;
+}
+
+.import-option {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.import-option-btn {
+  padding: 12px 20px;
+  background: var(--purple-5, #7246ff);
+  border: none;
+  border-radius: 6px;
+  color: var(--neutral-1, #ffffff);
+  font-size: 14px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.import-option-btn:hover {
+  background: var(--purple-4, #8a66ff);
+  transform: translateY(-1px);
+}
+
+.import-option-btn:active {
+  transform: translateY(0);
+}
+
+.import-option-desc {
+  margin: 0;
+  font-size: 12px;
+  color: var(--neutral-4, #808080);
+  line-height: 1.5;
+}
+
+.import-divider {
+  display: flex;
+  align-items: center;
+  margin: 24px 0;
+  text-align: center;
+}
+
+.import-divider::before,
+.import-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--neutral-7, #2a2a2a);
+}
+
+.import-divider span {
+  padding: 0 16px;
+  font-size: 12px;
+  color: var(--neutral-4, #808080);
+  font-weight: 500;
+}
+
