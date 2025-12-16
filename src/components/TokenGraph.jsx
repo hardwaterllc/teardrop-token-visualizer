@@ -105,7 +105,7 @@ const TokenGraph = forwardRef(function TokenGraph({
   // Collapsed groups state - tracks which groups are collapsed
   const [collapsedGroups, setCollapsedGroups] = useState(new Set());
 
-  // Calculate node positions in columns with master groups
+  // Calculate node positions in columns with layer groups
   const positionedNodes = useMemo(() => {
     const positioned = [];
     const CANVAS_WIDTH = 50000;
@@ -113,62 +113,77 @@ const TokenGraph = forwardRef(function TokenGraph({
     const CANVAS_CENTER_X = CANVAS_WIDTH / 2;
     const CANVAS_CENTER_Y = CANVAS_HEIGHT / 2;
 
-    // Position master groups and their children
-    if (graph.columns.masterGroups) {
-      // Calculate horizontal spacing for master groups
-      const masterGroupsCount = graph.columns.masterGroups.length;
-      const MIN_SPACING = 800; // Minimum spacing between master groups for better visibility
+    // Position layer groups and their children
+    if (graph.columns.layerGroups) {
+      // Calculate horizontal spacing for layer groups
+      const layerGroupsCount = graph.columns.layerGroups.length;
+      const MIN_SPACING = 800; // Minimum spacing between layer groups for better visibility
       const spacing = MIN_SPACING;
       
-      // Calculate total width of all master groups
-      const totalWidth = (masterGroupsCount - 1) * spacing + NODE_WIDTH;
+      // Calculate total width of all layer groups
+      const totalWidth = (layerGroupsCount - 1) * spacing + NODE_WIDTH;
       
-      // Center the master groups on the canvas (both horizontally and vertically)
+      // Center the layer groups on the canvas (both horizontally and vertically)
       // Start X position: canvas center - half of total width
       const startX = CANVAS_CENTER_X - totalWidth / 2;
       // Y position: canvas center - half of node height (to center the node vertically)
-      const MASTER_Y = CANVAS_CENTER_Y - NODE_HEIGHT / 2;
+      const LAYER_Y = CANVAS_CENTER_Y - NODE_HEIGHT / 2;
       
-      graph.columns.masterGroups.forEach((masterGroup, index) => {
-        const masterKey = `master-${masterGroup.id}`;
+      graph.columns.layerGroups.forEach((layerGroup, index) => {
+        const masterKey = `layer-${layerGroup.id}`;
         const masterSavedPos = nodePositionsRef.current.get(masterKey);
         
         // Calculate X position: centered horizontally with good spacing, snapped to grid
         const masterX = masterSavedPos?.x ?? snapToGrid(startX + index * spacing);
-        const masterY = masterSavedPos?.y ?? snapToGrid(MASTER_Y); // Centered vertically, snapped to grid
+        const masterY = masterSavedPos?.y ?? snapToGrid(LAYER_Y); // Centered vertically, snapped to grid
         
-        // Position master group
+        
+        // Position layer group
         positioned.push({
-          ...masterGroup,
+          ...layerGroup,
           x: masterX,
           y: masterY,
-          column: masterGroup.layer,
-          isMasterGroup: true
+          column: layerGroup.layer,
+          isLayerGroup: true
         });
 
-        // Skip children if master group is collapsed
-        if (collapsedGroups.has(masterGroup.id)) {
-          return; // Skip to next master group
+        // Skip children if layer group is collapsed
+        if (collapsedGroups.has(layerGroup.id)) {
+          return; // Skip to next layer group
         }
         
-        let childYOffset = snapToGrid(masterY + ROW_HEIGHT + 12); // Start below master group, snapped to grid
+        let childYOffset = snapToGrid(masterY + ROW_HEIGHT + 12); // Start below layer group, snapped to grid
 
-        if (masterGroup.id === 'master:components') {
-          // Position component category groups first
-          const componentCategories = graph.columns.groups.filter(g => g.masterGroupId === 'master:components').sort((a, b) => a.name.localeCompare(b.name));
+        // Get nodes for this layer dynamically
+        const layerNodes = graph.columns[layerGroup.layer] || [];
+        const layerColumn = layerGroup.layer;
+        
+
+        if (layerGroup.layer === 'component') {
+          // Position component groups (category groups and dot groups) first
+          // Get all groups for this layer, including dot groups
+          const componentGroups = graph.columns.groups.filter(g => 
+            g.layerGroupId === layerGroup.id || 
+            (g.id && g.id.startsWith('group:component:') && !g.parentGroupId)
+          ).sort((a, b) => a.name.localeCompare(b.name));
+          
+          // Separate category groups from dot groups
+          const componentCategories = componentGroups.filter(g => g.id && g.id.startsWith('category:'));
+          const componentDotGroups = componentGroups.filter(g => g.id && g.id.startsWith('group:component:'));
           
           componentCategories.forEach((categoryGroup) => {
             const categoryKey = `category-${categoryGroup.id}`;
             const categorySavedPos = nodePositionsRef.current.get(categoryKey);
             const categoryY = categorySavedPos?.y ?? snapToGrid(childYOffset);
+            const categoryX = categorySavedPos?.x ?? snapToGrid(masterX + INDENT_AMOUNT);
             
             positioned.push({
               ...categoryGroup,
-              x: snapToGrid(masterX + INDENT_AMOUNT), // Always indent under master (enforce hierarchy)
+              x: categoryX,
               y: categoryY,
               column: 'component',
               isGroup: true,
-              masterGroupId: masterGroup.id
+              layerGroupId: layerGroup.id
             });
 
             // Skip children if category group is collapsed
@@ -176,7 +191,7 @@ const TokenGraph = forwardRef(function TokenGraph({
               // First, find and position child groups (nested groups)
               const childGroups = graph.columns.groups.filter(g => 
                 g.parentGroupId === categoryGroup.id && 
-                g.masterGroupId === 'master:components'
+                g.layerGroupId === layerGroup.id
               ).sort((a, b) => a.name.localeCompare(b.name));
               
               let currentYOffset = snapToGrid(categoryY + ROW_HEIGHT + 8);
@@ -186,20 +201,21 @@ const TokenGraph = forwardRef(function TokenGraph({
                 const childGroupKey = `category-${childGroup.id}`;
                 const childGroupSavedPos = nodePositionsRef.current.get(childGroupKey);
                 const childGroupY = childGroupSavedPos?.y ?? snapToGrid(currentYOffset);
+                const childGroupX = childGroupSavedPos?.x ?? snapToGrid(categoryX + INDENT_AMOUNT);
                 
                 positioned.push({
                   ...childGroup,
-                  x: snapToGrid(masterX + INDENT_AMOUNT * 2), // Always indent under parent category (enforce hierarchy)
+                  x: childGroupX,
                   y: childGroupY,
                   column: 'component',
                   isGroup: true,
-                  masterGroupId: masterGroup.id,
+                  layerGroupId: layerGroup.id,
                   groupId: categoryGroup.id
                 });
                 
                 // Position tokens under this child group
                 if (!collapsedGroups.has(childGroup.id)) {
-                  const childGroupTokens = graph.columns.component.filter(n => {
+                  const childGroupTokens = layerNodes.filter(n => {
                     const hasLink = graph.links.some(link => 
                       link.source === childGroup.id && 
                       link.target === n.id && 
@@ -210,15 +226,17 @@ const TokenGraph = forwardRef(function TokenGraph({
                   
                   let childTokenYOffset = snapToGrid(childGroupY + ROW_HEIGHT + 8);
                   childGroupTokens.forEach((node) => {
-                    const key = `component-${node.id}`;
+                    const key = `${layerColumn}-${node.id}`;
                     const savedPos = nodePositionsRef.current.get(key);
+                    // Position tokens indented relative to their parent child group's X position
+                    const tokenX = snapToGrid(childGroupX + INDENT_AMOUNT);
                     positioned.push({
                       ...node,
-                      x: snapToGrid(masterX + INDENT_AMOUNT * 3), // Always triple indent under child group (enforce hierarchy)
+                      x: tokenX, // Always use calculated indented position relative to group
                       y: savedPos?.y ?? snapToGrid(childTokenYOffset), // Use saved Y position if available
-                      column: 'component',
+                      column: layerColumn,
                       groupId: childGroup.id,
-                      masterGroupId: masterGroup.id
+                      layerGroupId: layerGroup.id
                     });
                     if (!savedPos) {
                       childTokenYOffset = snapToGrid(childTokenYOffset + ROW_HEIGHT + 4);
@@ -228,7 +246,7 @@ const TokenGraph = forwardRef(function TokenGraph({
                   if (childGroupTokens.length > 0) {
                     // Use the maximum Y position of children (if they have saved positions) to calculate next offset
                     const maxChildY = childGroupTokens.reduce((max, node) => {
-                      const key = `component-${node.id}`;
+                      const key = `${layerColumn}-${node.id}`;
                       const savedPos = nodePositionsRef.current.get(key);
                       return savedPos ? Math.max(max, savedPos.y + ROW_HEIGHT + 4) : max;
                     }, childTokenYOffset);
@@ -247,7 +265,7 @@ const TokenGraph = forwardRef(function TokenGraph({
               
               // Then position tokens directly under the category (if no child groups or after child groups)
               const category = categoryGroup.category;
-              const categoryChildren = graph.columns.component.filter(n => {
+              const categoryChildren = layerNodes.filter(n => {
                 // Exclude tokens that belong to child groups
                 const belongsToChildGroup = childGroups.some(cg => 
                   graph.links.some(link => 
@@ -283,15 +301,17 @@ const TokenGraph = forwardRef(function TokenGraph({
               }
               
               categoryChildren.forEach((node) => {
-                const key = `component-${node.id}`;
+                const key = `${layerColumn}-${node.id}`;
                 const savedPos = nodePositionsRef.current.get(key);
+                // Position tokens indented relative to their parent group's X position
+                const tokenX = snapToGrid(categoryX + INDENT_AMOUNT);
                 positioned.push({
                   ...node,
-                  x: snapToGrid(masterX + INDENT_AMOUNT * 2), // Always double indent under category (enforce hierarchy)
+                  x: tokenX, // Always use calculated indented position relative to group
                   y: savedPos?.y ?? snapToGrid(tokenYOffset), // Use saved Y position if available
                   column: 'component',
                   groupId: categoryGroup.id,
-                  masterGroupId: masterGroup.id
+                  layerGroupId: layerGroup.id
                 });
                 if (!savedPos) {
                   tokenYOffset = snapToGrid(tokenYOffset + ROW_HEIGHT + 4);
@@ -301,7 +321,7 @@ const TokenGraph = forwardRef(function TokenGraph({
               if (categoryChildren.length > 0) {
                 // Use the maximum Y position of children (if they have saved positions) to calculate next offset
                 const maxChildY = categoryChildren.reduce((max, node) => {
-                  const key = `component-${node.id}`;
+                  const key = `${layerColumn}-${node.id}`;
                   const savedPos = nodePositionsRef.current.get(key);
                   return savedPos ? Math.max(max, savedPos.y + ROW_HEIGHT + 4) : max;
                 }, tokenYOffset);
@@ -311,27 +331,195 @@ const TokenGraph = forwardRef(function TokenGraph({
               } else if (!categorySavedPos) {
                 childYOffset = snapToGrid(categoryY + ROW_HEIGHT + 20);
               }
+              } else {
+                // Group is collapsed - next group should start right after this one
+                childYOffset = snapToGrid(categoryY + ROW_HEIGHT + 20); // Space for collapsed category
+              }
+            });
+          
+          // Position component dot groups (hierarchical groups for dot-separated tokens)
+          componentDotGroups.forEach((dotGroup) => {
+            const dotGroupKey = `group-${dotGroup.id}`;
+            const dotGroupSavedPos = nodePositionsRef.current.get(dotGroupKey);
+            const dotGroupY = dotGroupSavedPos?.y ?? snapToGrid(childYOffset);
+            const dotGroupX = dotGroupSavedPos?.x ?? snapToGrid(masterX + INDENT_AMOUNT);
+            
+            positioned.push({
+              ...dotGroup,
+              x: dotGroupX,
+              y: dotGroupY,
+              column: layerColumn,
+              isGroup: true,
+              layerGroupId: layerGroup.id
+            });
+
+            if (!collapsedGroups.has(dotGroup.id)) {
+              // Find child dot groups (nested groups)
+              const childDotGroups = componentDotGroups.filter(g => 
+                g.parentGroupId === dotGroup.id
+              ).sort((a, b) => a.name.localeCompare(b.name));
+              
+              let currentYOffset = snapToGrid(dotGroupY + ROW_HEIGHT + 8);
+              
+              // Position child dot groups first
+              childDotGroups.forEach((childDotGroup) => {
+                const childDotGroupKey = `group-${childDotGroup.id}`;
+                const childDotGroupSavedPos = nodePositionsRef.current.get(childDotGroupKey);
+                const childDotGroupY = childDotGroupSavedPos?.y ?? snapToGrid(currentYOffset);
+                const childDotGroupX = childDotGroupSavedPos?.x ?? snapToGrid(dotGroupX + INDENT_AMOUNT);
+                
+                positioned.push({
+                  ...childDotGroup,
+                  x: childDotGroupX,
+                  y: childDotGroupY,
+                  column: layerColumn,
+                  isGroup: true,
+                  layerGroupId: layerGroup.id,
+                  groupId: dotGroup.id
+                });
+
+                // Position tokens under this child dot group
+                if (!collapsedGroups.has(childDotGroup.id)) {
+                  const childDotGroupTokens = layerNodes.filter(n => {
+                    const hasLink = graph.links.some(link => 
+                      link.source === childDotGroup.id && 
+                      link.target === n.id && 
+                      link.type === 'group-member'
+                    );
+                    return hasLink;
+                  }).sort(naturalSort);
+                  
+                  let childTokenYOffset = snapToGrid(childDotGroupY + ROW_HEIGHT + 8);
+                  childDotGroupTokens.forEach((node) => {
+                    const key = `${layerColumn}-${node.id}`;
+                    const savedPos = nodePositionsRef.current.get(key);
+                    // Position tokens indented relative to their parent child group's X position
+                    const tokenX = snapToGrid(childDotGroupX + INDENT_AMOUNT);
+                    positioned.push({
+                      ...node,
+                      x: tokenX, // Always use calculated indented position relative to group
+                      y: savedPos?.y ?? snapToGrid(childTokenYOffset),
+                      column: layerColumn,
+                      groupId: childDotGroup.id,
+                      layerGroupId: layerGroup.id
+                    });
+                    if (!savedPos) {
+                      childTokenYOffset = snapToGrid(childTokenYOffset + ROW_HEIGHT + 4);
+                    }
+                  });
+                  
+                  if (childDotGroupTokens.length > 0) {
+                    const maxChildY = childDotGroupTokens.reduce((max, node) => {
+                      const key = `${layerColumn}-${node.id}`;
+                      const savedPos = nodePositionsRef.current.get(key);
+                      return savedPos ? Math.max(max, savedPos.y + ROW_HEIGHT + 4) : max;
+                    }, childTokenYOffset);
+                    currentYOffset = snapToGrid(maxChildY + 20);
+                  } else {
+                    currentYOffset = snapToGrid(childDotGroupY + ROW_HEIGHT + 20);
+                  }
+                } else {
+                  currentYOffset = snapToGrid(childDotGroupY + ROW_HEIGHT + 20);
+                }
+                
+                if (!childDotGroupSavedPos) {
+                  currentYOffset = snapToGrid(currentYOffset);
+                }
+              });
+              
+              // Position tokens directly under the dot group (if no child groups or after child groups)
+              const dotGroupTokens = layerNodes.filter(n => {
+                // Exclude tokens that belong to child groups
+                const belongsToChildGroup = childDotGroups.some(cg => 
+                  graph.links.some(link => 
+                    link.source === cg.id && 
+                    link.target === n.id && 
+                    link.type === 'group-member'
+                  )
+                );
+                if (belongsToChildGroup) return false;
+                
+                // Check if token belongs to this group via links
+                const hasLink = graph.links.some(link => 
+                  link.source === dotGroup.id && 
+                  link.target === n.id && 
+                  link.type === 'group-member'
+                );
+                return hasLink;
+              }).sort(naturalSort);
+              
+              let tokenYOffset = currentYOffset;
+              if (childDotGroups.length === 0) {
+                tokenYOffset = snapToGrid(dotGroupY + ROW_HEIGHT + 8);
+              }
+              
+              dotGroupTokens.forEach((node) => {
+                const key = `${layerColumn}-${node.id}`;
+                const savedPos = nodePositionsRef.current.get(key);
+                // Position tokens indented relative to their parent group's X position
+                const tokenX = snapToGrid(dotGroupX + INDENT_AMOUNT);
+                positioned.push({
+                  ...node,
+                  x: tokenX, // Always use calculated indented position relative to group
+                  y: savedPos?.y ?? snapToGrid(tokenYOffset),
+                  column: layerColumn,
+                  groupId: dotGroup.id,
+                  layerGroupId: layerGroup.id
+                });
+                if (!savedPos) {
+                  tokenYOffset = snapToGrid(tokenYOffset + ROW_HEIGHT + 4);
+                }
+              });
+
+              if (dotGroupTokens.length > 0) {
+                const maxChildY = dotGroupTokens.reduce((max, node) => {
+                  const key = `${layerColumn}-${node.id}`;
+                  const savedPos = nodePositionsRef.current.get(key);
+                  return savedPos ? Math.max(max, savedPos.y + ROW_HEIGHT + 4) : max;
+                }, tokenYOffset);
+                childYOffset = snapToGrid(maxChildY + 20);
+              } else if (childDotGroups.length > 0) {
+                childYOffset = snapToGrid(currentYOffset);
+              } else if (!dotGroupSavedPos) {
+                childYOffset = snapToGrid(dotGroupY + ROW_HEIGHT + 20);
+              }
             } else {
-              // Group is collapsed - next group should start right after this one
-              childYOffset = snapToGrid(categoryY + ROW_HEIGHT + 20); // Space for collapsed category
+              childYOffset = snapToGrid(dotGroupY + ROW_HEIGHT + 20);
             }
           });
-        } else if (masterGroup.id === 'master:semantic') {
-          // Position semantic category groups first
-          const semanticCategories = graph.columns.groups.filter(g => g.masterGroupId === 'master:semantic').sort((a, b) => a.name.localeCompare(b.name));
+        } else if (layerGroup.layer !== 'primitive' && layerGroup.layer !== 'component') {
+          // Position groups for this layer (global, shared, semantic, etc.)
+          // Get all groups for this layer - check both layerGroupId and layer property
+          const layerGroups = graph.columns.groups.filter(g => 
+            (g.layerGroupId === layerGroup.id || g.layer === layerGroup.layer) &&
+            g.layer === layerGroup.layer
+          ).sort((a, b) => a.name.localeCompare(b.name));
           
-          semanticCategories.forEach((categoryGroup) => {
+          // Separate category groups, dot groups, and underscore groups
+          const layerCategories = layerGroups.filter(g => g.id && g.id.startsWith('category:'));
+          const layerDotGroups = layerGroups.filter(g => 
+            g.id && g.id.startsWith(`group:${layerGroup.layer}:`) && 
+            !g.id.startsWith('category:')
+          );
+          const layerUnderscoreGroups = layerGroups.filter(g => 
+            g.id && g.id.startsWith(`group:${layerGroup.layer}:`) && 
+            !g.id.startsWith('category:') &&
+            !layerDotGroups.some(dg => dg.id === g.id)
+          );
+          
+          
+          layerCategories.forEach((categoryGroup) => {
             const categoryKey = `category-${categoryGroup.id}`;
             const categorySavedPos = nodePositionsRef.current.get(categoryKey);
             const categoryY = categorySavedPos?.y ?? snapToGrid(childYOffset);
             
             positioned.push({
               ...categoryGroup,
-              x: snapToGrid(masterX + INDENT_AMOUNT), // Always indent under master (enforce hierarchy)
+              x: snapToGrid(masterX + INDENT_AMOUNT), // Always indent under layer (enforce hierarchy)
               y: categoryY,
-              column: 'semantic',
+              column: layerColumn,
               isGroup: true,
-              masterGroupId: masterGroup.id
+              layerGroupId: layerGroup.id
             });
 
             // Skip children if category group is collapsed
@@ -339,7 +527,7 @@ const TokenGraph = forwardRef(function TokenGraph({
               // First, find and position child groups (nested groups)
               const childGroups = graph.columns.groups.filter(g => 
                 g.parentGroupId === categoryGroup.id && 
-                g.masterGroupId === 'master:semantic'
+                g.layerGroupId === layerGroup.id
               ).sort((a, b) => a.name.localeCompare(b.name));
               
               let currentYOffset = snapToGrid(categoryY + ROW_HEIGHT + 8);
@@ -354,15 +542,15 @@ const TokenGraph = forwardRef(function TokenGraph({
                   ...childGroup,
                   x: snapToGrid(masterX + INDENT_AMOUNT * 2), // Always indent under parent category (enforce hierarchy)
                   y: childGroupY,
-                  column: 'semantic',
+                  column: layerColumn,
                   isGroup: true,
-                  masterGroupId: masterGroup.id,
+                  layerGroupId: layerGroup.id,
                   groupId: categoryGroup.id
                 });
                 
                 // Position tokens under this child group
                 if (!collapsedGroups.has(childGroup.id)) {
-                  const childGroupTokens = graph.columns.semantic.filter(n => {
+                  const childGroupTokens = layerNodes.filter(n => {
                     const hasLink = graph.links.some(link => 
                       link.source === childGroup.id && 
                       link.target === n.id && 
@@ -373,15 +561,15 @@ const TokenGraph = forwardRef(function TokenGraph({
                   
                   let childTokenYOffset = snapToGrid(childGroupY + ROW_HEIGHT + 8);
                   childGroupTokens.forEach((node) => {
-                    const key = `semantic-${node.id}`;
+                    const key = `${layerColumn}-${node.id}`;
                     const savedPos = nodePositionsRef.current.get(key);
                     positioned.push({
                       ...node,
                       x: snapToGrid(masterX + INDENT_AMOUNT * 3), // Always triple indent under child group (enforce hierarchy)
                       y: savedPos?.y ?? snapToGrid(childTokenYOffset), // Use saved Y position if available
-                      column: 'semantic',
+                      column: layerColumn,
                       groupId: childGroup.id,
-                      masterGroupId: masterGroup.id
+                      layerGroupId: layerGroup.id
                     });
                     if (!savedPos) {
                       childTokenYOffset = snapToGrid(childTokenYOffset + ROW_HEIGHT + 4);
@@ -391,7 +579,7 @@ const TokenGraph = forwardRef(function TokenGraph({
                   if (childGroupTokens.length > 0) {
                     // Use the maximum Y position of children (if they have saved positions) to calculate next offset
                     const maxChildY = childGroupTokens.reduce((max, node) => {
-                      const key = `semantic-${node.id}`;
+                      const key = `${layerColumn}-${node.id}`;
                       const savedPos = nodePositionsRef.current.get(key);
                       return savedPos ? Math.max(max, savedPos.y + ROW_HEIGHT + 4) : max;
                     }, childTokenYOffset);
@@ -411,7 +599,7 @@ const TokenGraph = forwardRef(function TokenGraph({
               
               // Then position tokens directly under the category (if no child groups or after child groups)
               const category = categoryGroup.category;
-              const categoryChildren = graph.columns.semantic.filter(n => {
+              const categoryChildren = layerNodes.filter(n => {
                 // Exclude tokens that belong to child groups
                 const belongsToChildGroup = childGroups.some(cg => 
                   graph.links.some(link => 
@@ -448,15 +636,15 @@ const TokenGraph = forwardRef(function TokenGraph({
               }
               
               categoryChildren.forEach((node) => {
-                const key = `semantic-${node.id}`;
+                const key = `${layerColumn}-${node.id}`;
                 const savedPos = nodePositionsRef.current.get(key);
                 positioned.push({
                   ...node,
                   x: snapToGrid(masterX + INDENT_AMOUNT * 2), // Always double indent under category (enforce hierarchy)
                   y: savedPos?.y ?? snapToGrid(tokenYOffset), // Use saved Y position if available
-                  column: 'semantic',
+                  column: layerColumn,
                   groupId: categoryGroup.id,
-                  masterGroupId: masterGroup.id
+                  layerGroupId: layerGroup.id
                 });
                 if (!savedPos) {
                   tokenYOffset = snapToGrid(tokenYOffset + ROW_HEIGHT + 4);
@@ -466,7 +654,7 @@ const TokenGraph = forwardRef(function TokenGraph({
               if (categoryChildren.length > 0) {
                 // Use the maximum Y position of children (if they have saved positions) to calculate next offset
                 const maxChildY = categoryChildren.reduce((max, node) => {
-                  const key = `semantic-${node.id}`;
+                  const key = `${layerColumn}-${node.id}`;
                   const savedPos = nodePositionsRef.current.get(key);
                   return savedPos ? Math.max(max, savedPos.y + ROW_HEIGHT + 4) : max;
                 }, tokenYOffset);
@@ -482,133 +670,342 @@ const TokenGraph = forwardRef(function TokenGraph({
               childYOffset = snapToGrid(categoryY + ROW_HEIGHT + 20); // Space for collapsed category
             }
           });
-        } else if (masterGroup.id === 'master:primitives') {
-          // Position opacity group first (if it exists)
-          const opacityGroup = graph.columns.groups.find(g => g.id === 'group:opacity');
-          if (opacityGroup) {
-            const opacityKey = `group-${opacityGroup.id}`;
-            const opacitySavedPos = nodePositionsRef.current.get(opacityKey);
-            const opacityY = opacitySavedPos?.y ?? snapToGrid(childYOffset);
+          
+          // Position underscore groups for this layer (hierarchical groups for underscore-separated tokens)
+          // Note: layerUnderscoreGroups was already filtered above at line 490
+          // Position root underscore groups (those without parentGroupId) hierarchically
+          const rootUnderscoreGroups = layerUnderscoreGroups.filter(g => !g.parentGroupId).sort(naturalSort);
+          
+          // Build nested underscore groups map for hierarchical positioning
+          const nestedUnderscoreGroups = new Map();
+          layerUnderscoreGroups.filter(g => g.parentGroupId).forEach(g => {
+            if (!nestedUnderscoreGroups.has(g.parentGroupId)) {
+              nestedUnderscoreGroups.set(g.parentGroupId, []);
+            }
+            nestedUnderscoreGroups.get(g.parentGroupId).push(g);
+          });
+          
+          // Recursive function to position underscore groups and their children
+          // Returns the final Y position after positioning this group and all its children
+          const positionUnderscoreGroup = (underscoreGroup, indentLevel = 1) => {
+            const underscoreGroupKey = `group-${underscoreGroup.id}`;
+            const underscoreGroupSavedPos = nodePositionsRef.current.get(underscoreGroupKey);
+            const underscoreGroupY = underscoreGroupSavedPos?.y ?? snapToGrid(childYOffset);
+            const underscoreGroupX = underscoreGroupSavedPos?.x ?? snapToGrid(masterX + INDENT_AMOUNT * indentLevel);
             
             positioned.push({
-              ...opacityGroup,
-              x: snapToGrid(masterX + INDENT_AMOUNT), // Always indent under master (enforce hierarchy)
-              y: opacityY,
-              column: 'primitive',
+              ...underscoreGroup,
+              x: underscoreGroupX,
+              y: underscoreGroupY,
+              column: layerColumn,
               isGroup: true,
-              masterGroupId: masterGroup.id
+              layerGroupId: layerGroup.id,
+              parentGroupId: underscoreGroup.parentGroupId || null
             });
 
-            // Skip children if opacity group is collapsed
-            if (!collapsedGroups.has(opacityGroup.id)) {
-            // Position opacity groups (hierarchical structure) under opacity group
-            // Find root opacity groups (those with masterGroupId === 'group:opacity' and no parentGroupId)
-            const rootOpacityGroups = graph.columns.groups.filter(g => 
-              g.masterGroupId === 'group:opacity' && !g.parentGroupId
-            ).sort(naturalSort);
-            
-            // Build nested groups map
-            const nestedOpacityGroups = new Map();
-            graph.columns.groups.filter(g => 
-              g.masterGroupId === 'group:opacity' && g.parentGroupId
-            ).forEach(g => {
-              if (!nestedOpacityGroups.has(g.parentGroupId)) {
-                nestedOpacityGroups.set(g.parentGroupId, []);
-              }
-              nestedOpacityGroups.get(g.parentGroupId).push(g);
-            });
-            
-            // Recursive function to position opacity groups and their tokens
-            const positionOpacityGroup = (group, indentLevel = 2) => {
-              const groupKey = `group-${group.id}`;
-              const groupSavedPos = nodePositionsRef.current.get(groupKey);
-              const groupY = groupSavedPos?.y ?? snapToGrid(opacityPaletteYOffset);
+            let finalY = underscoreGroupY;
+
+            if (!collapsedGroups.has(underscoreGroup.id)) {
+              // Find child underscore groups (nested groups)
+              const childUnderscoreGroups = nestedUnderscoreGroups.get(underscoreGroup.id) || [];
               
-              positioned.push({
-                ...group,
-                x: snapToGrid(masterX + INDENT_AMOUNT * indentLevel),
-                y: groupY,
-                column: 'primitive',
-                isGroup: true,
-                masterGroupId: masterGroup.id,
-                opacityGroupId: opacityGroup.id,
-                groupId: group.parentGroupId || opacityGroup.id
+              // Position child underscore groups first
+              childUnderscoreGroups.forEach((childUnderscoreGroup) => {
+                childYOffset = snapToGrid(finalY + ROW_HEIGHT + 8);
+                finalY = positionUnderscoreGroup(childUnderscoreGroup, indentLevel + 1);
               });
               
-              // Skip children if group is collapsed
-              if (!collapsedGroups.has(group.id)) {
-                // Position child groups first
-                const childGroups = nestedOpacityGroups.get(group.id) || [];
-                childGroups.forEach(childGroup => {
-                  opacityPaletteYOffset = snapToGrid(groupY + ROW_HEIGHT + 8);
-                  positionOpacityGroup(childGroup, indentLevel + 1);
-                });
-                
-                // Then position tokens directly under this group
-                const groupTokens = graph.columns.primitive.filter(n => {
-                  const hasLink = graph.links.some(link => 
-                    link.source === group.id && 
+              // Position tokens directly under the underscore group (if no child groups or after child groups)
+              const underscoreGroupTokens = layerNodes.filter(n => {
+                // Exclude tokens that belong to child groups
+                const belongsToChildGroup = childUnderscoreGroups.some(cg => 
+                  graph.links.some(link => 
+                    link.source === cg.id && 
                     link.target === n.id && 
                     link.type === 'group-member'
-                  );
-                  return hasLink;
-                }).sort(naturalSort);
+                  )
+                );
+                if (belongsToChildGroup) return false;
                 
-                let tokenYOffset = snapToGrid(groupY + ROW_HEIGHT + 8 + (childGroups.length * ROW_HEIGHT));
-                groupTokens.forEach((childNode) => {
-                  const childKey = `primitive-${childNode.id}`;
-                  const childSavedPos = nodePositionsRef.current.get(childKey);
-                  positioned.push({
-                    ...childNode,
-                    x: snapToGrid(masterX + INDENT_AMOUNT * (indentLevel + 1)),
-                    y: childSavedPos?.y ?? snapToGrid(tokenYOffset),
-                    column: 'primitive',
-                    groupId: group.id,
-                    opacityGroupId: opacityGroup.id,
-                    masterGroupId: masterGroup.id
-                  });
-                  if (!childSavedPos) {
-                    tokenYOffset = snapToGrid(tokenYOffset + ROW_HEIGHT + 4);
-                  }
+                // Check if token belongs to this group via links
+                const hasLink = graph.links.some(link => 
+                  link.source === underscoreGroup.id && 
+                  link.target === n.id && 
+                  link.type === 'group-member'
+                );
+                return hasLink;
+              }).sort(naturalSort);
+              
+              let tokenYOffset = snapToGrid(finalY + ROW_HEIGHT + 8);
+              
+              underscoreGroupTokens.forEach((node) => {
+                const key = `${layerColumn}-${node.id}`;
+                const savedPos = nodePositionsRef.current.get(key);
+                // Position tokens indented relative to their parent group's X position
+                const tokenX = snapToGrid(underscoreGroupX + INDENT_AMOUNT);
+                positioned.push({
+                  ...node,
+                  x: tokenX, // Always use calculated indented position relative to group
+                  y: savedPos?.y ?? snapToGrid(tokenYOffset),
+                  column: layerColumn,
+                  groupId: underscoreGroup.id,
+                  layerGroupId: layerGroup.id
                 });
-                
-                if (groupTokens.length > 0) {
-                  opacityPaletteYOffset = snapToGrid(tokenYOffset + 20);
-                } else if (childGroups.length > 0) {
-                  opacityPaletteYOffset = snapToGrid(groupY + ROW_HEIGHT + 20);
-                } else {
-                  opacityPaletteYOffset = snapToGrid(groupY + ROW_HEIGHT + 20);
+                if (!savedPos) {
+                  tokenYOffset = snapToGrid(tokenYOffset + ROW_HEIGHT + 4);
                 }
+              });
+
+              if (underscoreGroupTokens.length > 0) {
+                finalY = snapToGrid(tokenYOffset + 20);
+              } else if (childUnderscoreGroups.length > 0) {
+                finalY = snapToGrid(finalY + 20);
               } else {
-                opacityPaletteYOffset = snapToGrid(groupY + ROW_HEIGHT + 20);
+                finalY = snapToGrid(underscoreGroupY + ROW_HEIGHT + 20);
               }
-            };
+            } else {
+              // Group is collapsed - just add space for the group header
+              finalY = snapToGrid(underscoreGroupY + ROW_HEIGHT + 20);
+            }
             
-            let opacityPaletteYOffset = snapToGrid(opacityY + ROW_HEIGHT + 8);
+            return finalY;
+          };
+          
+          // Position all root underscore groups, updating childYOffset after each
+          rootUnderscoreGroups.forEach(group => {
+            childYOffset = positionUnderscoreGroup(group, 1);
+          });
+          
+          // Position dot groups for this layer (hierarchical groups for dot-separated tokens)
+          // Position root dot groups (those without parentGroupId) hierarchically
+          const rootDotGroups = layerDotGroups.filter(g => !g.parentGroupId).sort(naturalSort);
+          
+          // Build nested dot groups map for hierarchical positioning
+          const nestedDotGroups = new Map();
+          layerDotGroups.filter(g => g.parentGroupId).forEach(g => {
+            if (!nestedDotGroups.has(g.parentGroupId)) {
+              nestedDotGroups.set(g.parentGroupId, []);
+            }
+            nestedDotGroups.get(g.parentGroupId).push(g);
+          });
+          
+          // Recursive function to position dot groups and their children
+          // Returns the final Y position after positioning this group and all its children
+          const positionDotGroup = (dotGroup, indentLevel = 1) => {
+            const dotGroupKey = `group-${dotGroup.id}`;
+            const dotGroupSavedPos = nodePositionsRef.current.get(dotGroupKey);
+            const dotGroupY = dotGroupSavedPos?.y ?? snapToGrid(childYOffset);
+            const dotGroupX = dotGroupSavedPos?.x ?? snapToGrid(masterX + INDENT_AMOUNT * indentLevel);
             
-            // Position all root opacity groups
-            rootOpacityGroups.forEach(group => {
-              positionOpacityGroup(group);
+            positioned.push({
+              ...dotGroup,
+              x: dotGroupX,
+              y: dotGroupY,
+              column: layerColumn,
+              isGroup: true,
+              layerGroupId: layerGroup.id,
+              parentGroupId: dotGroup.parentGroupId || null
+            });
+
+            let finalY = dotGroupY;
+
+            if (!collapsedGroups.has(dotGroup.id)) {
+              // Find child dot groups (nested groups)
+              const childDotGroups = nestedDotGroups.get(dotGroup.id) || [];
+              
+              // Position child dot groups first
+              childDotGroups.forEach((childDotGroup) => {
+                childYOffset = snapToGrid(finalY + ROW_HEIGHT + 8);
+                finalY = positionDotGroup(childDotGroup, indentLevel + 1);
+              });
+              
+              // Position tokens directly under the dot group (if no child groups or after child groups)
+              const dotGroupTokens = layerNodes.filter(n => {
+                // Exclude tokens that belong to child groups
+                const belongsToChildGroup = childDotGroups.some(cg => 
+                  graph.links.some(link => 
+                    link.source === cg.id && 
+                    link.target === n.id && 
+                    link.type === 'group-member'
+                  )
+                );
+                if (belongsToChildGroup) return false;
+                
+                // Check if token belongs to this group via links
+                const hasLink = graph.links.some(link => 
+                  link.source === dotGroup.id && 
+                  link.target === n.id && 
+                  link.type === 'group-member'
+                );
+                return hasLink;
+              }).sort(naturalSort);
+              
+              let tokenYOffset = snapToGrid(finalY + ROW_HEIGHT + 8);
+              
+              dotGroupTokens.forEach((node) => {
+                const key = `${layerColumn}-${node.id}`;
+                const savedPos = nodePositionsRef.current.get(key);
+                // Position tokens indented relative to their parent group's X position
+                const tokenX = snapToGrid(dotGroupX + INDENT_AMOUNT);
+                positioned.push({
+                  ...node,
+                  x: tokenX, // Always use calculated indented position relative to group
+                  y: savedPos?.y ?? snapToGrid(tokenYOffset),
+                  column: layerColumn,
+                  groupId: dotGroup.id,
+                  layerGroupId: layerGroup.id
+                });
+                if (!savedPos) {
+                  tokenYOffset = snapToGrid(tokenYOffset + ROW_HEIGHT + 4);
+                }
+              });
+
+              if (dotGroupTokens.length > 0) {
+                finalY = snapToGrid(tokenYOffset + 20);
+              } else if (childDotGroups.length > 0) {
+                finalY = snapToGrid(finalY + 20);
+              } else {
+                finalY = snapToGrid(dotGroupY + ROW_HEIGHT + 20);
+              }
+            } else {
+              // Group is collapsed - just add space for the group header
+              finalY = snapToGrid(dotGroupY + ROW_HEIGHT + 20);
+            }
+            
+            return finalY;
+          };
+          
+          // Position all root dot groups, updating childYOffset after each
+          rootDotGroups.forEach(group => {
+            childYOffset = positionDotGroup(group, 1);
+          });
+          
+          // Position any ungrouped tokens for this layer (tokens that don't belong to any group)
+          const ungroupedTokens = layerNodes.filter(n => {
+            // Check if token is already positioned (has a group)
+            return !positioned.some(p => p.id === n.id && p.column === layerColumn);
+          }).sort(naturalSort);
+          
+          if (ungroupedTokens.length > 0) {
+            let tokenYOffset = snapToGrid(childYOffset);
+            ungroupedTokens.forEach((node) => {
+              const key = `${layerColumn}-${node.id}`;
+              const savedPos = nodePositionsRef.current.get(key);
+              positioned.push({
+                ...node,
+                x: snapToGrid(masterX + INDENT_AMOUNT),
+                y: savedPos?.y ?? snapToGrid(tokenYOffset),
+                column: layerColumn,
+                layerGroupId: layerGroup.id
+              });
+              if (!savedPos) {
+                tokenYOffset = snapToGrid(tokenYOffset + ROW_HEIGHT + 4);
+              }
+            });
+          }
+        } else if (layerGroup.layer === 'primitive') {
+          // Position opacity groups (hierarchical structure) directly under primitive layer
+          // Find root opacity groups (those with layerGroupId === primitive layer group and no parentGroupId)
+          const rootOpacityGroups = graph.columns.groups.filter(g => 
+            g.layerGroupId === layerGroup.id && !g.parentGroupId && g.layer === 'primitive' && g.id.startsWith('group:opacity:')
+          ).sort(naturalSort);
+          
+          // Build nested groups map
+          const nestedOpacityGroups = new Map();
+          graph.columns.groups.filter(g => 
+            g.layerGroupId === layerGroup.id && g.parentGroupId && g.id.startsWith('group:opacity:')
+          ).forEach(g => {
+            if (!nestedOpacityGroups.has(g.parentGroupId)) {
+              nestedOpacityGroups.set(g.parentGroupId, []);
+            }
+            nestedOpacityGroups.get(g.parentGroupId).push(g);
+          });
+          
+          // Recursive function to position opacity groups and their tokens
+          // Returns the final Y position after positioning this group and all its children
+          const positionOpacityGroup = (group, indentLevel = 1) => {
+            const groupKey = `group-${group.id}`;
+            const groupSavedPos = nodePositionsRef.current.get(groupKey);
+            const groupY = groupSavedPos?.y ?? snapToGrid(childYOffset);
+            const groupX = groupSavedPos?.x ?? snapToGrid(masterX + INDENT_AMOUNT * indentLevel);
+            
+            positioned.push({
+              ...group,
+              x: groupX,
+              y: groupY,
+              column: 'primitive',
+              isGroup: true,
+              layerGroupId: layerGroup.id,
+              groupId: group.parentGroupId || layerGroup.id
             });
             
-            // Update childYOffset after positioning all opacity groups
-            if (!opacitySavedPos) {
-              childYOffset = snapToGrid(opacityPaletteYOffset + 20); // Space after opacity group, snapped to grid
-            }
+            let finalY = groupY;
+            
+            // Skip children if group is collapsed
+            if (!collapsedGroups.has(group.id)) {
+              // Position child groups first
+              const childGroups = nestedOpacityGroups.get(group.id) || [];
+              childGroups.forEach(childGroup => {
+                childYOffset = snapToGrid(finalY + ROW_HEIGHT + 8);
+                finalY = positionOpacityGroup(childGroup, indentLevel + 1);
+              });
+              
+              // Then position tokens directly under this group
+              const groupTokens = layerNodes.filter(n => {
+                const hasLink = graph.links.some(link => 
+                  link.source === group.id && 
+                  link.target === n.id && 
+                  link.type === 'group-member'
+                );
+                return hasLink;
+              }).sort(naturalSort);
+              
+              let tokenYOffset = snapToGrid(finalY + ROW_HEIGHT + 8);
+              groupTokens.forEach((childNode) => {
+                const childKey = `primitive-${childNode.id}`;
+                const childSavedPos = nodePositionsRef.current.get(childKey);
+                // Position tokens indented relative to their parent group's X position
+                const tokenX = snapToGrid(groupX + INDENT_AMOUNT);
+                positioned.push({
+                  ...childNode,
+                  x: tokenX, // Always use calculated indented position relative to group
+                  y: childSavedPos?.y ?? snapToGrid(tokenYOffset),
+                  column: layerColumn,
+                  groupId: group.id,
+                  layerGroupId: layerGroup.id
+                });
+                if (!childSavedPos) {
+                  tokenYOffset = snapToGrid(tokenYOffset + ROW_HEIGHT + 4);
+                }
+              });
+              
+              if (groupTokens.length > 0) {
+                finalY = snapToGrid(tokenYOffset + 20);
+              } else if (childGroups.length > 0) {
+                finalY = snapToGrid(finalY + 20);
+              } else {
+                finalY = snapToGrid(groupY + ROW_HEIGHT + 20);
+              }
             } else {
-              // Opacity group is collapsed - next group should start right after this one
-              childYOffset = snapToGrid(opacityY + ROW_HEIGHT + 20); // Space for collapsed opacity group
+              // Group is collapsed - just add space for the group header
+              finalY = snapToGrid(groupY + ROW_HEIGHT + 20);
             }
-          }
+            
+            return finalY;
+          };
+          
+          // Position root opacity groups, updating childYOffset after each
+          rootOpacityGroups.forEach(group => {
+            childYOffset = positionOpacityGroup(group, 1);
+          });
           
           // Position color primitive groups (both palette groups and underscore-separated groups)
           if (graph.columns.groups) {
             // Filter to only color primitive groups (not opacity-related)
             // This includes both palette groups (dot-separated) and underscore groups
             const colorPrimitiveGroups = graph.columns.groups.filter(g => 
-              g.masterGroupId === 'master:primitives' && 
-              !g.opacityGroupId &&
-              g.id !== 'group:opacity' &&
+              g.layerGroupId === layerGroup.id && 
+              !g.id.startsWith('group:opacity:') &&
               (g.palette || g.id.startsWith('group:primitive:'))
             );
             
@@ -623,28 +1020,32 @@ const TokenGraph = forwardRef(function TokenGraph({
             });
             
             // Recursive function to position groups and their children
+            // Returns the final Y position after positioning this group and all its children
             const positionPrimitiveGroup = (group, indentLevel = 1) => {
               const groupKey = `group-${group.id}`;
               const groupSavedPos = nodePositionsRef.current.get(groupKey);
               const groupY = groupSavedPos?.y ?? snapToGrid(childYOffset);
+              const groupX = groupSavedPos?.x ?? snapToGrid(masterX + INDENT_AMOUNT * indentLevel);
               
               positioned.push({
                 ...group,
-                x: snapToGrid(masterX + INDENT_AMOUNT * indentLevel), // Always enforce hierarchy indentation
+                x: groupX,
                 y: groupY,
                 column: 'primitive',
                 isGroup: true,
-                masterGroupId: masterGroup.id,
+                layerGroupId: layerGroup.id,
                 groupId: group.parentGroupId || null // Preserve parent relationship for nested groups
               });
+
+              let finalY = groupY;
 
               // Skip children if group is collapsed
               if (!collapsedGroups.has(group.id)) {
                 // Position child groups first (nested groups)
                 const childGroups = nestedGroups.get(group.id) || [];
                 childGroups.forEach(childGroup => {
-                  childYOffset = snapToGrid(groupY + ROW_HEIGHT + 8);
-                  positionPrimitiveGroup(childGroup, indentLevel + 1);
+                  childYOffset = snapToGrid(finalY + ROW_HEIGHT + 8);
+                  finalY = positionPrimitiveGroup(childGroup, indentLevel + 1);
                 });
                 
                 // Then position tokens directly under this group
@@ -656,7 +1057,7 @@ const TokenGraph = forwardRef(function TokenGraph({
                 }
                 // For underscore-separated groups, find tokens via links
                 else if (group.id.startsWith('group:primitive:')) {
-                  children = graph.columns.primitive.filter(n => {
+                  children = layerNodes.filter(n => {
                     const hasLink = graph.links.some(link => 
                       link.source === group.id && 
                       link.target === n.id && 
@@ -666,18 +1067,20 @@ const TokenGraph = forwardRef(function TokenGraph({
                   }).sort(naturalSort);
                 }
                 
-                let tokenYOffset = snapToGrid(groupY + ROW_HEIGHT + 8 + (childGroups.length * ROW_HEIGHT));
+                let tokenYOffset = snapToGrid(finalY + ROW_HEIGHT + 8);
               
                 children.forEach((childNode) => {
                   const childKey = `primitive-${childNode.id}`;
                   const childSavedPos = nodePositionsRef.current.get(childKey);
+                  // Position tokens indented relative to their parent group's X position
+                  const tokenX = snapToGrid(groupX + INDENT_AMOUNT);
                   positioned.push({
                     ...childNode,
-                    x: snapToGrid(masterX + INDENT_AMOUNT * (indentLevel + 1)), // Always enforce hierarchy indentation
+                    x: tokenX, // Always use calculated indented position relative to group
                     y: childSavedPos?.y ?? snapToGrid(tokenYOffset), // Use saved Y position if available
-                    column: 'primitive',
+                    column: layerColumn,
                     groupId: group.id,
-                    masterGroupId: masterGroup.id
+                    layerGroupId: layerGroup.id
                   });
                   if (!childSavedPos) {
                     tokenYOffset = snapToGrid(tokenYOffset + ROW_HEIGHT + 4);
@@ -685,38 +1088,42 @@ const TokenGraph = forwardRef(function TokenGraph({
                 });
 
                 if (children.length > 0) {
-                  childYOffset = snapToGrid(tokenYOffset + 20);
+                  finalY = snapToGrid(tokenYOffset + 20);
                 } else if (childGroups.length > 0) {
-                  childYOffset = snapToGrid(groupY + ROW_HEIGHT + 20);
+                  finalY = snapToGrid(finalY + 20);
+                } else {
+                  finalY = snapToGrid(groupY + ROW_HEIGHT + 20);
                 }
               } else {
-                // Group is collapsed - next group should start right after this one
-                childYOffset = snapToGrid(groupY + ROW_HEIGHT + 20);
+                // Group is collapsed - just add space for the group header
+                finalY = snapToGrid(groupY + ROW_HEIGHT + 20);
               }
+              
+              return finalY;
             };
             
-            // Position all root groups
+            // Position all root groups, updating childYOffset after each
             rootGroups.forEach(group => {
-              positionPrimitiveGroup(group);
+              childYOffset = positionPrimitiveGroup(group);
             });
             
             // Position any primitive tokens that don't belong to any group
-            const ungroupedPrimitives = graph.columns.primitive.filter(n => {
+            const ungroupedPrimitives = layerNodes.filter(n => {
               // Check if token is already positioned (has a group)
-              return !positioned.some(p => p.id === n.id && p.column === 'primitive');
+              return !positioned.some(p => p.id === n.id && p.column === layerColumn);
             });
             
             if (ungroupedPrimitives.length > 0) {
               let tokenYOffset = snapToGrid(childYOffset);
               ungroupedPrimitives.forEach((node) => {
-                const key = `primitive-${node.id}`;
+                const key = `${layerColumn}-${node.id}`;
                 const savedPos = nodePositionsRef.current.get(key);
                 positioned.push({
                   ...node,
                   x: snapToGrid(masterX + INDENT_AMOUNT), // Always enforce hierarchy indentation
                   y: savedPos?.y ?? snapToGrid(tokenYOffset), // Use saved Y position if available
-                  column: 'primitive',
-                  masterGroupId: masterGroup.id
+                  column: layerColumn,
+                  layerGroupId: layerGroup.id
                 });
                 if (!savedPos) {
                   tokenYOffset = snapToGrid(tokenYOffset + ROW_HEIGHT + 4);
@@ -724,31 +1131,127 @@ const TokenGraph = forwardRef(function TokenGraph({
               });
             }
           }
+        } else {
+          // Generic handler for any other layer types
+          // Position category groups for this layer
+          const layerCategories = graph.columns.groups.filter(g => g.layerGroupId === layerGroup.id).sort((a, b) => a.name.localeCompare(b.name));
+          
+          layerCategories.forEach((categoryGroup) => {
+            const categoryKey = `category-${categoryGroup.id}`;
+            const categorySavedPos = nodePositionsRef.current.get(categoryKey);
+            const categoryY = categorySavedPos?.y ?? snapToGrid(childYOffset);
+            
+            const categoryX = categorySavedPos?.x ?? snapToGrid(masterX + INDENT_AMOUNT);
+            positioned.push({
+              ...categoryGroup,
+              x: categoryX,
+              y: categoryY,
+              column: layerColumn,
+              isGroup: true,
+              layerGroupId: layerGroup.id
+            });
+
+            if (!collapsedGroups.has(categoryGroup.id)) {
+              // Position tokens for this category
+              const categoryChildren = layerNodes.filter(n => {
+                const hasLink = graph.links.some(link => 
+                  link.source === categoryGroup.id && 
+                  link.target === n.id && 
+                  link.type === 'group-member'
+                );
+                return hasLink;
+              }).sort(naturalSort);
+              
+              let tokenYOffset = snapToGrid(categoryY + ROW_HEIGHT + 8);
+              categoryChildren.forEach((node) => {
+                const key = `${layerColumn}-${node.id}`;
+                const savedPos = nodePositionsRef.current.get(key);
+                // Position tokens indented relative to their parent group's X position
+                const tokenX = snapToGrid(categoryX + INDENT_AMOUNT);
+                positioned.push({
+                  ...node,
+                  x: tokenX, // Always use calculated indented position relative to group
+                  y: savedPos?.y ?? snapToGrid(tokenYOffset),
+                  column: layerColumn,
+                  groupId: categoryGroup.id,
+                  layerGroupId: layerGroup.id
+                });
+                if (!savedPos) {
+                  tokenYOffset = snapToGrid(tokenYOffset + ROW_HEIGHT + 4);
+                }
+              });
+
+              if (categoryChildren.length > 0) {
+                const maxChildY = categoryChildren.reduce((max, node) => {
+                  const key = `${layerColumn}-${node.id}`;
+                  const savedPos = nodePositionsRef.current.get(key);
+                  return savedPos ? Math.max(max, savedPos.y + ROW_HEIGHT + 4) : max;
+                }, tokenYOffset);
+                childYOffset = snapToGrid(maxChildY + 20);
+              } else if (!categorySavedPos) {
+                childYOffset = snapToGrid(categoryY + ROW_HEIGHT + 20);
+              }
+            } else {
+              childYOffset = snapToGrid(categoryY + ROW_HEIGHT + 20);
+            }
+          });
         }
 
-        // All master groups are top-aligned, so we don't need to update yOffset
+        // All layer groups are top-aligned, so we don't need to update yOffset
       });
     } else {
-      // Fallback: position without master groups
+      // Fallback: position without layer groups
       yOffset = 0;
-      graph.columns.component.forEach((node) => {
-        const key = `component-${node.id}`;
-        const savedPos = nodePositionsRef.current.get(key);
-        positioned.push({
-          ...node,
-          x: savedPos?.x ?? SIDEBAR_WIDTH + 50,
-          y: savedPos?.y ?? yOffset,
-          column: 'component'
-        });
-        if (!savedPos) {
-          yOffset += ROW_HEIGHT + 4;
+      // Position all nodes from all layers
+      Object.keys(graph.columns).forEach(layerKey => {
+        if (layerKey !== 'groups' && layerKey !== 'layerGroups' && Array.isArray(graph.columns[layerKey])) {
+          graph.columns[layerKey].forEach((node) => {
+            const key = `${layerKey}-${node.id}`;
+            const savedPos = nodePositionsRef.current.get(key);
+            positioned.push({
+              ...node,
+              x: savedPos?.x ?? SIDEBAR_WIDTH + 50,
+              y: savedPos?.y ?? yOffset,
+              column: layerKey
+            });
+            if (!savedPos) {
+              yOffset += ROW_HEIGHT + 4;
+            }
+          });
         }
       });
     }
 
+    // Mark nodes as hidden if they are children of collapsed groups
+    const positionedWithVisibility = positioned.map(node => {
+      // Check if this node is a child of any collapsed group
+      let isHidden = false;
+      let currentGroupId = node.groupId || node.parentGroupId || node.layerGroupId;
+      
+      // Traverse up the parent chain to check if any parent is collapsed
+      while (currentGroupId) {
+        if (collapsedGroups.has(currentGroupId)) {
+          isHidden = true;
+          break;
+        }
+        // Find the parent group to continue traversal
+        const parentGroup = positioned.find(n => n.id === currentGroupId);
+        if (parentGroup) {
+          currentGroupId = parentGroup.groupId || parentGroup.parentGroupId || parentGroup.layerGroupId;
+        } else {
+          break;
+        }
+      }
+      
+      return {
+        ...node,
+        isHidden: isHidden
+      };
+    });
+
     // Update ref for document handler access
-    positionedNodesRef.current = positioned;
-    return positioned;
+    positionedNodesRef.current = positionedWithVisibility;
+    return positionedWithVisibility;
   }, [graph, nodePositionsVersion, collapsedGroups]);
 
   // Handle mouse events for panning and node dragging
@@ -791,8 +1294,8 @@ const TokenGraph = forwardRef(function TokenGraph({
       const nodeId = target.dataset.nodeId;
       const node = positionedNodes.find(n => n.id === nodeId);
       if (node) {
-        // Only allow dragging groups and master groups, not individual token nodes
-        if (!node.isMasterGroup && !node.isGroup) {
+        // Only allow dragging groups and layer groups, not individual token nodes
+        if (!node.isLayerGroup && !node.isGroup) {
           // Individual token nodes are not draggable
           // But in focus mode, allow clicking to switch focus
           if (focusMode && focusMode.chain.includes(nodeId)) {
@@ -802,8 +1305,8 @@ const TokenGraph = forwardRef(function TokenGraph({
           return;
         }
         
-        // Set up pending drag for groups/master groups only
-        const key = node.isMasterGroup ? `master-${nodeId}` :
+        // Set up pending drag for groups/layer groups only
+        const key = node.isLayerGroup ? `layer-${nodeId}` :
                    node.isGroup ? (node.id.startsWith('category:') ? `category-${nodeId}` : `group-${nodeId}`) :
                    `${node.column}-${nodeId}`;
         const currentPos = nodePositionsRef.current.get(key) || { x: node.x, y: node.y };
@@ -840,7 +1343,7 @@ const TokenGraph = forwardRef(function TokenGraph({
         // Store original positions of node and all children for proper relative movement
         const node = positionedNodes.find(n => n.id === nodeId);
         if (node) {
-          const key = node.isMasterGroup ? `master-${nodeId}` :
+          const key = node.isLayerGroup ? `layer-${nodeId}` :
                      node.isGroup ? (node.id.startsWith('category:') ? `category-${nodeId}` : `group-${nodeId}`) :
                      `${node.column}-${nodeId}`;
           
@@ -884,10 +1387,10 @@ const TokenGraph = forwardRef(function TokenGraph({
             return descendants;
           };
           
-          // Store children positions if it's a group/master
-          if (node.isMasterGroup || node.isGroup) {
-            const children = node.isMasterGroup 
-              ? positionedNodes.filter(n => n.masterGroupId === nodeId)
+          // Store children positions if it's a group/layer
+          if (node.isLayerGroup || node.isGroup) {
+            const children = node.isLayerGroup 
+              ? positionedNodes.filter(n => n.layerGroupId === nodeId)
               : positionedNodes.filter(n => {
                   // Check direct properties first
                   // For groups: check parentGroupId OR groupId (semantic child groups use groupId)
@@ -948,34 +1451,34 @@ const TokenGraph = forwardRef(function TokenGraph({
       let deltaX = screenDeltaX / zoom;
       let deltaY = screenDeltaY / zoom;
       
-      // Check if this is a child group (not a master group)
+      // Check if this is a child group (not a layer group)
       const node = positionedNodes.find(n => n.id === nodeId);
-      if (node && node.isGroup && !node.isMasterGroup) {
+      if (node && node.isGroup && !node.isLayerGroup) {
         // Child groups can only move vertically - lock X position
         deltaX = 0;
         
         // Constrain Y position to stay within parent's bounds
         const parentNode = positionedNodes.find(n => 
-          n.id === node.masterGroupId || 
+          n.id === node.layerGroupId || 
           n.id === node.groupId || 
           n.id === node.opacityGroupId
         );
         
         if (parentNode) {
-          const parentKey = parentNode.isMasterGroup ? `master-${parentNode.id}` :
+          const parentKey = parentNode.isLayerGroup ? `layer-${parentNode.id}` :
                            parentNode.isGroup ? (parentNode.id.startsWith('category:') ? `category-${parentNode.id}` : `group-${parentNode.id}`) :
                            `${parentNode.column}-${parentNode.id}`;
           const parentPos = nodePositionsRef.current.get(parentKey) || { x: parentNode.x, y: parentNode.y };
           
           // Get all siblings (other child groups at the same level)
-          // For nested groups, siblings share the same parent (groupId, opacityGroupId, or masterGroupId)
+          // For nested groups, siblings share the same parent (groupId, opacityGroupId, or layerGroupId)
           const siblings = positionedNodes.filter(n => {
-            if (!n.isGroup || n.isMasterGroup || n.id === nodeId) {
+            if (!n.isGroup || n.isLayerGroup || n.id === nodeId) {
               return false;
             }
-            // Direct children of master group (category/palette groups with no parent group)
-            if (node.masterGroupId && !node.groupId && !node.opacityGroupId && 
-                n.masterGroupId === node.masterGroupId && !n.groupId && !n.opacityGroupId) {
+            // Direct children of layer group (category/palette groups with no parent group)
+            if (node.layerGroupId && !node.groupId && !node.opacityGroupId && 
+                n.layerGroupId === node.layerGroupId && !n.groupId && !n.opacityGroupId) {
               return true;
             }
             // Children of a regular group (nested groups - like opacity palette groups)
@@ -1202,8 +1705,8 @@ const TokenGraph = forwardRef(function TokenGraph({
       dragOriginalPositionsRef.current.forEach((originalPos, nodeKey) => {
         // Find the nodeId from the key
         let nodeId = null;
-        if (nodeKey.startsWith('master-')) {
-          nodeId = nodeKey.replace('master-', '');
+        if (nodeKey.startsWith('layer-')) {
+          nodeId = nodeKey.replace('layer-', '');
         } else if (nodeKey.startsWith('category-')) {
           nodeId = nodeKey.replace('category-', '');
         } else if (nodeKey.startsWith('group-')) {
@@ -1232,8 +1735,8 @@ const TokenGraph = forwardRef(function TokenGraph({
         dragOriginalPositionsRef.current.forEach((originalPos, nodeKey) => {
           // Find the nodeId from the key
           let childNodeId = null;
-          if (nodeKey.startsWith('master-')) {
-            childNodeId = nodeKey.replace('master-', '');
+          if (nodeKey.startsWith('layer-')) {
+            childNodeId = nodeKey.replace('layer-', '');
           } else if (nodeKey.startsWith('category-')) {
             childNodeId = nodeKey.replace('category-', '');
           } else if (nodeKey.startsWith('group-')) {
@@ -1257,14 +1760,14 @@ const TokenGraph = forwardRef(function TokenGraph({
         // Calculate bounds of all dragged nodes at their current positions
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
         allDraggedNodes.forEach(draggedNode => {
-          const key = draggedNode.isMasterGroup ? `master-${draggedNode.id}` :
+          const key = draggedNode.isLayerGroup ? `layer-${draggedNode.id}` :
                      draggedNode.isGroup ? (draggedNode.id.startsWith('category:') ? `category-${draggedNode.id}` : `group-${draggedNode.id}`) :
                      `${draggedNode.column}-${draggedNode.id}`;
           const originalPos = dragOriginalPositionsRef.current.get(key);
           if (originalPos) {
             const currentX = originalPos.x + deltaX;
             const currentY = originalPos.y + deltaY;
-            const nodeHeight = draggedNode.isMasterGroup ? 40 : NODE_HEIGHT;
+            const nodeHeight = draggedNode.isLayerGroup ? 40 : NODE_HEIGHT;
             
             minX = Math.min(minX, currentX);
             minY = Math.min(minY, currentY);
@@ -1355,7 +1858,7 @@ const TokenGraph = forwardRef(function TokenGraph({
       let finalY = snapToGrid(dragStartPosRef.current.y + deltaY);
       
       // If this is a child group, handle reordering of siblings
-      if (node && node.isGroup && !node.isMasterGroup) {
+      if (node && node.isGroup && !node.isLayerGroup) {
         // Lock X position for child groups
         finalX = dragStartPosRef.current.x;
         
@@ -1409,8 +1912,8 @@ const TokenGraph = forwardRef(function TokenGraph({
         }
         
         // Fallback to property-based parent detection
-        // Priority: groupId > parentGroupId > opacityGroupId > masterGroupId
-        // This ensures semantic child groups find their category parent, not the master group
+        // Priority: groupId > parentGroupId > opacityGroupId > layerGroupId
+        // This ensures semantic child groups find their category parent, not the layer group
         if (!parentNode) {
           if (node.groupId) {
             parentNode = positionedNodes.find(n => n.id === node.groupId);
@@ -1421,16 +1924,16 @@ const TokenGraph = forwardRef(function TokenGraph({
           if (!parentNode && node.opacityGroupId) {
             parentNode = positionedNodes.find(n => n.id === node.opacityGroupId);
           }
-          if (!parentNode && node.masterGroupId) {
-            parentNode = positionedNodes.find(n => n.id === node.masterGroupId);
+          if (!parentNode && node.layerGroupId) {
+            parentNode = positionedNodes.find(n => n.id === node.layerGroupId);
           }
         }
         
         if (parentNode) {
           // Get all siblings (other child groups at the same level)
-          // For nested groups, siblings share the same parent (groupId, opacityGroupId, parentGroupId, or masterGroupId)
+          // For nested groups, siblings share the same parent (groupId, opacityGroupId, parentGroupId, or layerGroupId)
           const siblings = positionedNodes.filter(n => {
-            if (!n.isGroup || n.isMasterGroup || n.id === nodeId) {
+            if (!n.isGroup || n.isLayerGroup || n.id === nodeId) {
               return false;
             }
             
@@ -1449,9 +1952,9 @@ const TokenGraph = forwardRef(function TokenGraph({
               }
             }
             
-            // Direct children of master group (category/palette groups with no parent group)
-            if (node.masterGroupId && !node.groupId && !node.opacityGroupId && !node.parentGroupId && 
-                n.masterGroupId === node.masterGroupId && !n.groupId && !n.opacityGroupId && !n.parentGroupId) {
+            // Direct children of layer group (category/palette groups with no parent group)
+            if (node.layerGroupId && !node.groupId && !node.opacityGroupId && !node.parentGroupId && 
+                n.layerGroupId === node.layerGroupId && !n.groupId && !n.opacityGroupId && !n.parentGroupId) {
               return true;
             }
             // Children of a regular group (nested groups - like opacity palette groups)
@@ -1471,7 +1974,7 @@ const TokenGraph = forwardRef(function TokenGraph({
           });
           
           // Get parent position to start children directly below it
-          const parentKey = parentNode.isMasterGroup ? `master-${parentNode.id}` :
+          const parentKey = parentNode.isLayerGroup ? `layer-${parentNode.id}` :
                            parentNode.isGroup ? (parentNode.id.startsWith('category:') ? `category-${parentNode.id}` : `group-${parentNode.id}`) :
                            `${parentNode.column}-${parentNode.id}`;
           const parentPos = nodePositionsRef.current.get(parentKey) || { x: parentNode.x, y: parentNode.y };
@@ -1592,8 +2095,8 @@ const TokenGraph = forwardRef(function TokenGraph({
             dragOriginalPositionsRef.current.forEach((originalPos, nodeKey) => {
               // Find the nodeId from the key
               let descendantNodeId = null;
-              if (nodeKey.startsWith('master-')) {
-                descendantNodeId = nodeKey.replace('master-', '');
+              if (nodeKey.startsWith('layer-')) {
+                descendantNodeId = nodeKey.replace('layer-', '');
               } else if (nodeKey.startsWith('category-')) {
                 descendantNodeId = nodeKey.replace('category-', '');
               } else if (nodeKey.startsWith('group-')) {
@@ -1616,7 +2119,7 @@ const TokenGraph = forwardRef(function TokenGraph({
             
             // Skip the rest of the positioning logic since we've already updated positions
             // But we still need to update the main node position in the ref for consistency
-            const key = node.isMasterGroup ? `master-${nodeId}` :
+            const key = node.isLayerGroup ? `layer-${nodeId}` :
                        node.isGroup ? (node.id.startsWith('category:') ? `category-${nodeId}` : `group-${nodeId}`) :
                        `${node.column}-${nodeId}`;
             nodePositionsRef.current.set(key, { x: finalX, y: finalY });
@@ -1730,7 +2233,7 @@ const TokenGraph = forwardRef(function TokenGraph({
       const finalDeltaY = finalY - dragStartPosRef.current.y;
       
       if (node) {
-        const key = node.isMasterGroup ? `master-${nodeId}` :
+        const key = node.isLayerGroup ? `layer-${nodeId}` :
                    node.isGroup ? (node.id.startsWith('category:') ? `category-${nodeId}` : `group-${nodeId}`) :
                    `${node.column}-${nodeId}`;
         
@@ -1751,8 +2254,8 @@ const TokenGraph = forwardRef(function TokenGraph({
         dragOriginalPositionsRef.current.forEach((originalPos, nodeKey) => {
           // Find the nodeId from the key
           let nodeId = null;
-          if (nodeKey.startsWith('master-')) {
-            nodeId = nodeKey.replace('master-', '');
+          if (nodeKey.startsWith('layer-')) {
+            nodeId = nodeKey.replace('layer-', '');
           } else if (nodeKey.startsWith('category-')) {
             nodeId = nodeKey.replace('category-', '');
           } else if (nodeKey.startsWith('group-')) {
@@ -1866,7 +2369,7 @@ const TokenGraph = forwardRef(function TokenGraph({
             const finalDeltaY = finalY - dragStartPosRef.current.y;
             
             if (node) {
-              const key = node.isMasterGroup ? `master-${nodeId}` :
+              const key = node.isLayerGroup ? `layer-${nodeId}` :
                          node.isGroup ? (node.id.startsWith('category:') ? `category-${nodeId}` : `group-${nodeId}`) :
                          `${node.column}-${nodeId}`;
               
@@ -1887,8 +2390,8 @@ const TokenGraph = forwardRef(function TokenGraph({
               dragOriginalPositionsRef.current.forEach((originalPos, nodeKey) => {
                 // Find the nodeId from the key
                 let nodeId = null;
-                if (nodeKey.startsWith('master-')) {
-                  nodeId = nodeKey.replace('master-', '');
+                if (nodeKey.startsWith('layer-')) {
+                  nodeId = nodeKey.replace('layer-', '');
                 } else if (nodeKey.startsWith('category-')) {
                   nodeId = nodeKey.replace('category-', '');
                 } else if (nodeKey.startsWith('group-')) {
@@ -2014,7 +2517,7 @@ const TokenGraph = forwardRef(function TokenGraph({
     
     // Find the token's value in the current mode
     let targetTokenId = null;
-    if (token.modes && token.modes[selectedMode]) {
+    if (token.modes && selectedMode && token.modes[selectedMode]) {
       const value = token.modes[selectedMode];
       if (typeof value === 'string' && !value.startsWith('#')) {
         // It's a reference to another token - resolve it to the actual token ID
@@ -2033,13 +2536,13 @@ const TokenGraph = forwardRef(function TokenGraph({
   
   // Function to enter focus mode (called on double click)
   const enterFocusMode = useCallback((tokenId) => {
-    // Check if it's an actual token (not a group or master group)
+    // Check if it's an actual token (not a group or layer group)
     // Try allNodes first since it's more reliable, then positionedNodesRef
     const selectedNode = allNodes.find(n => n.id === tokenId) ||
                         positionedNodesRef.current.find(n => n.id === tokenId);
     
-    // Only enter focus mode for actual tokens, not groups or master groups
-    if (!selectedNode || selectedNode.isMasterGroup || selectedNode.isGroup) {
+    // Only enter focus mode for actual tokens, not groups or layer groups
+    if (!selectedNode || selectedNode.isLayerGroup || selectedNode.isGroup) {
       return;
     }
     
@@ -2050,11 +2553,22 @@ const TokenGraph = forwardRef(function TokenGraph({
     const referencedChain = referencedChainFull.length > 1 ? referencedChainFull.slice(1).reverse() : [];
     
     // Get consuming tokens (tokens that reference the selected token - right side)
-    const consumingTokens = graph.links
-      .filter(link => link.target === tokenId && link.type !== 'group-member' && link.type !== 'master-group-member')
-      .map(link => allNodes.find(n => n.id === link.source))
-      .filter(Boolean)
-      .filter(node => !node.isMasterGroup && !node.isGroup); // Only actual tokens, not groups
+    // Filter by selected mode if available, and deduplicate by token ID
+    const consumingTokenMap = new Map();
+    graph.links
+      .filter(link => 
+        link.target === tokenId && 
+        link.type !== 'group-member' && 
+        link.type !== 'layer-group-member' &&
+        (!selectedMode || !link.mode || link.mode === selectedMode) // Filter by mode if selected
+      )
+      .forEach(link => {
+        const node = allNodes.find(n => n.id === link.source);
+        if (node && !node.isLayerGroup && !node.isGroup && !consumingTokenMap.has(node.id)) {
+          consumingTokenMap.set(node.id, node);
+        }
+      });
+    const consumingTokens = Array.from(consumingTokenMap.values());
     
     // Store original view (only if not already in focus mode - preserve the original view)
     if (!focusMode) {
@@ -2077,7 +2591,7 @@ const TokenGraph = forwardRef(function TokenGraph({
     ];
     
     // Always enter focus mode if we have a token (even if no chain or consuming tokens)
-    if (selectedNode && !selectedNode.isMasterGroup && !selectedNode.isGroup) {
+    if (selectedNode && !selectedNode.isLayerGroup && !selectedNode.isGroup) {
       // Get viewport dimensions
       const viewportWidth = window.innerWidth;
       const viewportHeight = window.innerHeight;
@@ -2094,7 +2608,7 @@ const TokenGraph = forwardRef(function TokenGraph({
         selectedNodeGraphY = positionedNode.y + NODE_HEIGHT / 2; // Adjust for node center
       } else {
         // Fallback: try to get from saved positions or node properties
-        const key = selectedNode.isMasterGroup ? `master-${selectedNode.id}` :
+        const key = selectedNode.isLayerGroup ? `layer-${selectedNode.id}` :
                    selectedNode.isGroup ? (selectedNode.id.startsWith('category:') ? `category-${selectedNode.id}` : `group-${selectedNode.id}`) :
                    `${selectedNode.column}-${selectedNode.id}`;
         const currentPos = nodePositionsRef.current.get(key);
@@ -2119,7 +2633,7 @@ const TokenGraph = forwardRef(function TokenGraph({
       }
       
       // Use even spacing for all nodes
-      const evenSpacing = NODE_WIDTH + 100; // Consistent spacing between all nodes
+      const evenSpacing = NODE_WIDTH + 80; // Reduced spacing for more compact layout
       
       // Calculate positions:
       // Referenced chain on the left (reversed so primitive is leftmost)
@@ -2135,8 +2649,23 @@ const TokenGraph = forwardRef(function TokenGraph({
       // Calculate total width needed for horizontal layout
       const totalWidth = totalHorizontalNodes > 1 ? (totalHorizontalNodes - 1) * evenSpacing + NODE_WIDTH : NODE_WIDTH;
       
+      // Debug: log layout info
+      console.log('[FocusMode] Layout calculation:', {
+        tokenId,
+        referencedCount,
+        consumingCount,
+        totalHorizontalNodes,
+        totalWidth,
+        evenSpacing,
+        selectedNodeGraphX,
+        selectedNodeGraphY,
+        viewportWidth,
+        viewportHeight
+      });
+      
       // Calculate total height needed for consuming tokens (stacked vertically)
-      const maxConsumingHeight = consumingCount > 0 ? consumingCount * (NODE_HEIGHT + 20) - 20 : 0;
+      // Use 64px spacing as requested
+      const maxConsumingHeight = consumingCount > 0 ? consumingCount * 64 - (64 - NODE_HEIGHT) : 0;
       const totalHeight = Math.max(NODE_HEIGHT, maxConsumingHeight);
       
       // Validate that we have valid graph coordinates
@@ -2146,28 +2675,42 @@ const TokenGraph = forwardRef(function TokenGraph({
         return;
       }
       
-      // Use the token's current position as the center for the layout
-      // This ensures the layout is centered around where the token actually is
-      const graphCenterX = selectedNodeGraphX;
-      const graphCenterY = selectedNodeGraphY;
+      // Calculate layout centered on the selected token's current position
+      // selectedNodeGraphY is already the CENTER Y of the selected token
+      // This keeps the token in place and shows connections around it
+      const layoutCenterX = selectedNodeGraphX;
+      const selectedTokenCenterY = selectedNodeGraphY; // This is the center Y of the selected token
       
       // Start X position: center minus half the total width
-      const startX = graphCenterX - totalWidth / 2;
-      const chainY = graphCenterY; // Center vertically in graph coordinates
+      const startX = layoutCenterX - totalWidth / 2;
+      
+      // Debug: log coordinate conversion
+      console.log('[FocusMode] Layout calculation (centered on token):', {
+        tokenGraphPos: { x: selectedNodeGraphX, y: selectedNodeGraphY },
+        layoutCenter: { x: layoutCenterX, y: selectedTokenCenterY },
+        startX,
+        selectedTokenCenterY,
+        totalWidth,
+        totalHeight: maxConsumingHeight,
+        evenSpacing
+      });
       
       // Validate calculated positions are valid
-      if (isNaN(startX) || !isFinite(startX) || isNaN(chainY) || !isFinite(chainY)) {
-        console.warn('Invalid calculated positions for focus mode:', { startX, chainY, graphCenterX, graphCenterY, totalWidth });
+      if (isNaN(startX) || !isFinite(startX) || isNaN(selectedTokenCenterY) || !isFinite(selectedTokenCenterY)) {
+        console.warn('Invalid calculated positions for focus mode:', { startX, selectedTokenCenterY, totalWidth });
         return;
       }
       
       // Build linear positions (in graph coordinates)
+      // Note: Positions are stored as top-left corner (x, y), not center
       const linearPositions = [];
       
       // Add referenced nodes (left side, primitive is leftmost)
+      // All horizontal nodes (referenced + selected) should be aligned on the same Y line
+      const horizontalNodeY = selectedTokenCenterY - NODE_HEIGHT / 2; // Top-left Y for horizontal nodes
       referencedNodes.forEach((node, index) => {
         const focusX = startX + index * evenSpacing;
-        const focusY = chainY - NODE_HEIGHT / 2;
+        const focusY = horizontalNodeY; // Same Y as selected token
         if (isNaN(focusX) || !isFinite(focusX) || isNaN(focusY) || !isFinite(focusY)) {
           console.warn('Invalid position for referenced node:', { nodeId: node.id, focusX, focusY, startX, index, evenSpacing });
           return;
@@ -2180,8 +2723,9 @@ const TokenGraph = forwardRef(function TokenGraph({
       });
       
       // Add selected node (after referenced nodes)
+      // Should be at the same Y as referenced nodes (horizontally aligned)
       const selectedNodeX = startX + referencedCount * evenSpacing;
-      const selectedNodeY = chainY - NODE_HEIGHT / 2;
+      const selectedNodeY = horizontalNodeY; // Same Y as referenced nodes
       if (!isNaN(selectedNodeX) && isFinite(selectedNodeX) && !isNaN(selectedNodeY) && isFinite(selectedNodeY)) {
         linearPositions.push({
           id: tokenId,
@@ -2194,15 +2738,51 @@ const TokenGraph = forwardRef(function TokenGraph({
       }
       
       // Add consuming tokens (right side, stacked vertically)
+      // Position them to the right of the selected token
       const consumingStartX = startX + (referencedCount + 1) * evenSpacing;
-      const consumingStartY = chainY - (maxConsumingHeight / 2) + (NODE_HEIGHT / 2);
+      // Use 64px spacing for consuming tokens as requested
+      const consumingSpacing = 64;
+      // Calculate the total height of the consuming token stack
+      // Total height = (number of tokens - 1) * spacing + height of one token
+      const totalConsumingHeight = consumingCount > 0 ? (consumingCount - 1) * consumingSpacing + NODE_HEIGHT : 0;
+      
+      // Center the stack vertically around the selected token's center Y
+      // The stack's center should be at selectedTokenCenterY
+      // Stack center = consumingStartY + (totalConsumingHeight / 2)
+      // So: consumingStartY = selectedTokenCenterY - (totalConsumingHeight / 2)
+      // But consumingStartY is the top-left Y of the first token
+      // So first token's center Y = consumingStartY + NODE_HEIGHT / 2
+      // We want: first token's center Y + (totalConsumingHeight / 2) - (NODE_HEIGHT / 2) = selectedTokenCenterY
+      // Solving: consumingStartY = selectedTokenCenterY - (totalConsumingHeight / 2)
+      const consumingStartY = selectedTokenCenterY - (totalConsumingHeight / 2);
+      
+      // Debug: log consuming token positioning
+      console.log('[FocusMode] Consuming tokens positioning:', {
+        consumingCount,
+        startX,
+        referencedCount,
+        evenSpacing,
+        calculatedConsumingStartX: startX + (referencedCount + 1) * evenSpacing,
+        consumingStartX,
+        consumingStartY,
+        totalConsumingHeight,
+        consumingSpacing,
+        selectedTokenCenterY,
+        selectedNodeY: selectedNodeY,
+        horizontalNodeY: horizontalNodeY,
+        firstTokenCenterY: consumingStartY + NODE_HEIGHT / 2,
+        stackCenterY: consumingStartY + (totalConsumingHeight / 2)
+      });
+      
       consumingTokens.forEach((node, index) => {
         const focusX = consumingStartX;
-        const focusY = consumingStartY + index * (NODE_HEIGHT + 20);
+        // Each token's top-left Y = start Y + (index * spacing)
+        const focusY = consumingStartY + index * consumingSpacing;
         if (isNaN(focusX) || !isFinite(focusX) || isNaN(focusY) || !isFinite(focusY)) {
           console.warn('Invalid position for consuming node:', { nodeId: node.id, focusX, focusY });
           return;
         }
+        console.log(`[FocusMode] Consuming token ${index}: ${node.id} at (${focusX}, ${focusY})`);
         linearPositions.push({
           id: node.id,
           focusX,
@@ -2225,6 +2805,20 @@ const TokenGraph = forwardRef(function TokenGraph({
       const maxX = Math.max(...validPositions.map(p => p.focusX)) + NODE_WIDTH;
       const minY = Math.min(...validPositions.map(p => p.focusY));
       const maxY = Math.max(...validPositions.map(p => p.focusY)) + NODE_HEIGHT;
+      
+      // Debug: log bounding box
+      console.log('[FocusMode] Bounding box:', {
+        minX, maxX, minY, maxY,
+        width: maxX - minX,
+        height: maxY - minY,
+        totalPositions: validPositions.length,
+        consumingTokens: consumingTokens.length,
+        consumingTokenPositions: validPositions.filter(p => consumingTokens.some(ct => ct.id === p.id)).map(p => ({
+          id: p.id,
+          x: p.focusX,
+          y: p.focusY
+        }))
+      });
       
       // Validate bounding box
       if (isNaN(minX) || isNaN(maxX) || isNaN(minY) || isNaN(maxY) || 
@@ -2255,9 +2849,29 @@ const TokenGraph = forwardRef(function TokenGraph({
       
       const calculatedZoom = Math.max(0.1, Math.min(validZoomX, validZoomY, 1.2)); // Cap at 120%, minimum 0.1
       
+      // Debug: log zoom calculation
+      console.log('[FocusMode] Zoom calculation:', {
+        chainWidth,
+        chainHeight,
+        paddedWidth,
+        paddedHeight,
+        availableWidth,
+        availableHeight,
+        zoomX,
+        zoomY,
+        calculatedZoom
+      });
+      
       // Calculate center of chain in graph coordinates
       const chainCenterX = (minX + maxX) / 2;
       const chainCenterY = (minY + maxY) / 2;
+      
+      // Debug: log chain center
+      console.log('[FocusMode] Chain center:', {
+        chainCenterX,
+        chainCenterY,
+        minX, maxX, minY, maxY
+      });
       
       // Build full chain array for focus mode
       const fullChain = [
@@ -2312,13 +2926,20 @@ const TokenGraph = forwardRef(function TokenGraph({
       const tokenContainerX = tokenScreenX - containerRect.left;
       const tokenContainerY = tokenScreenY - containerRect.top;
       
+      // Calculate the selected token's current screen position to use as zoom point
+      // This ensures we zoom into the token's current location
+      const selectedTokenScreenX = selectedNodeGraphX * zoom + panX;
+      const selectedTokenScreenY = selectedNodeGraphY * zoom + panY;
+      const selectedTokenContainerX = selectedTokenScreenX - containerRect.left;
+      const selectedTokenContainerY = selectedTokenScreenY - containerRect.top;
+      
       // Use the chain center for zoom point to ensure the whole chain is visible
       const chainCenterScreenX = chainCenterX * zoom + panX;
       const chainCenterScreenY = chainCenterY * zoom + panY;
       const chainCenterContainerX = chainCenterScreenX - containerRect.left;
       const chainCenterContainerY = chainCenterScreenY - containerRect.top;
       
-      // Determine zoom point - use chain center for better centering
+      // Determine zoom point - use selected token's position when entering focus mode
       let zoomPointX, zoomPointY;
       if (focusMode && focusMode.linearPositions) {
         // Switching focus: use the chain center from current focus layout
@@ -2333,20 +2954,25 @@ const TokenGraph = forwardRef(function TokenGraph({
         zoomPointX = currentScreenX - containerRect.left;
         zoomPointY = currentScreenY - containerRect.top;
       } else {
-        // Entering focus mode: zoom at the chain center
-        zoomPointX = chainCenterContainerX;
-        zoomPointY = chainCenterContainerY;
+        // Entering focus mode: zoom at the selected token's current position
+        zoomPointX = selectedTokenContainerX;
+        zoomPointY = selectedTokenContainerY;
       }
       
-      // Calculate where we want the chain center to be on screen (target position)
+      // Calculate where we want the SELECTED TOKEN CENTER to be on screen (target position)
+      // We want to center the selected token's center, not its top-left corner
       const targetScreenCenterX = (viewportWidth - SIDEBAR_WIDTH) / 2 + SIDEBAR_WIDTH;
       const targetScreenCenterY = viewportHeight / 2;
       
-      // Calculate what the pan needs to be to center the chain after zoom
-      // Formula: targetScreenX = chainCenterX * newZoom + newPanX
-      // Solving: newPanX = targetScreenX - chainCenterX * newZoom
-      const targetPanX = targetScreenCenterX - chainCenterX * calculatedZoom;
-      const targetPanY = targetScreenCenterY - chainCenterY * calculatedZoom;
+      // Calculate the selected token's center position in the new layout
+      const selectedNodeCenterX = selectedNodeX + NODE_WIDTH / 2;
+      const selectedNodeCenterY = selectedNodeY + NODE_HEIGHT / 2;
+      
+      // Calculate what the pan needs to be to center the SELECTED TOKEN CENTER after zoom
+      // Formula: targetScreenX = selectedTokenCenterX * newZoom + newPanX
+      // Solving: newPanX = targetScreenX - selectedTokenCenterX * newZoom
+      const targetPanX = targetScreenCenterX - selectedNodeCenterX * calculatedZoom;
+      const targetPanY = targetScreenCenterY - selectedNodeCenterY * calculatedZoom;
       
       // Calculate what pan will be after zoom (onZoom adjusts pan to keep zoom point fixed)
       // onZoom formula from App.jsx: newPanX = panX + (centerX - panX) * (1 - zoomRatio)
@@ -2358,6 +2984,17 @@ const TokenGraph = forwardRef(function TokenGraph({
       // Calculate the pan delta needed to go from post-zoom position to target position
       const panDeltaX = targetPanX - panAfterZoomX;
       const panDeltaY = targetPanY - panAfterZoomY;
+      
+      // Debug: log pan calculation
+      console.log('[FocusMode] Pan calculation:', {
+        currentPan: { x: panX, y: panY },
+        targetScreenCenter: { x: targetScreenCenterX, y: targetScreenCenterY },
+        targetPan: { x: targetPanX, y: targetPanY },
+        panAfterZoom: { x: panAfterZoomX, y: panAfterZoomY },
+        panDelta: { x: panDeltaX, y: panDeltaY },
+        zoomRatio,
+        zoomPoint: { x: zoomPointX, y: zoomPointY }
+      });
       
       // Apply zoom - onZoom will handle pan adjustment internally
       onZoom(calculatedZoom - zoom, zoomPointX, zoomPointY);
@@ -2481,7 +3118,7 @@ const TokenGraph = forwardRef(function TokenGraph({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onPan, onZoom, focusMode, exitFocusMode]);
 
-  // Get connections for rendering (exclude group-member and master-group-member links)
+  // Get connections for rendering (exclude group-member and layer-group-member links)
   // Calculate which nodes are connected to selected tokens (for interactive highlighting)
   const connectedToSelectedNodes = useMemo(() => {
     if (!interactiveHighlighting || selectedTokens.length === 0 || !graph.links) {
@@ -2599,17 +3236,24 @@ const TokenGraph = forwardRef(function TokenGraph({
               typeof selectedPos.focusY === 'number' && !isNaN(selectedPos.focusY) &&
               typeof consumingPos.focusX === 'number' && !isNaN(consumingPos.focusX) &&
               typeof consumingPos.focusY === 'number' && !isNaN(consumingPos.focusY)) {
-            // For stacked consuming tokens, create a path that goes horizontally from selected,
-            // then vertically to the consuming token
-            const midX = selectedPos.focusX + NODE_WIDTH + 40; // Horizontal offset before vertical line
+            // For stacked consuming tokens, create a shorter L-shaped path
+            // Go horizontally first, then vertically to minimize line length
+            const horizontalOffset = 30; // Shorter horizontal segment
+            const midX = selectedPos.focusX + NODE_WIDTH + horizontalOffset;
+            // Use the selected token's center Y for the horizontal segment
+            const selectedCenterY = selectedPos.focusY + NODE_HEIGHT / 2;
+            // Use the consuming token's center Y for the target
+            const consumingCenterY = consumingPos.focusY + NODE_HEIGHT / 2;
+            
             chainConnections.push({
               source: selectedTokenId,
               target: consumingId,
               sourceX: selectedPos.focusX + NODE_WIDTH, // Right side of selected
-              sourceY: selectedPos.focusY + NODE_HEIGHT / 2,
+              sourceY: selectedCenterY, // Center Y of selected token
               targetX: consumingPos.focusX, // Left side of consuming token
-              targetY: consumingPos.focusY + NODE_HEIGHT / 2,
+              targetY: consumingCenterY, // Center Y of consuming token
               midX: midX, // Intermediate point for L-shaped path
+              midY: selectedCenterY, // Keep horizontal segment at selected token's center Y
               type: 'reference',
               isChain: true,
               isHorizontal: false, // L-shaped path
@@ -2623,11 +3267,47 @@ const TokenGraph = forwardRef(function TokenGraph({
       return chainConnections;
     }
     
-    return graph.links
-      .filter(link => link.type !== 'group-member' && link.type !== 'master-group-member')
+    const referenceLinks = graph.links.filter(link => link.type === 'reference');
+    
+    let missingSourceCount = 0;
+    let missingTargetCount = 0;
+    
+    const processedConnections = graph.links
+      .filter(link => link.type !== 'group-member' && link.type !== 'layer-group-member')
+      .filter(link => {
+        // For reference links, only show connections for the selected mode
+        if (link.type === 'reference') {
+          // If no mode is selected, don't show any reference links
+          if (!selectedMode) {
+            return false;
+          }
+          // Only show links that match the selected mode
+          return link.mode === selectedMode;
+        }
+        // For other link types, show them regardless of mode
+        return true;
+      })
       .map(link => {
         const sourceNode = positionedNodesMap.get(link.source);
         const targetNode = positionedNodesMap.get(link.target);
+        // For reference links, we want to show connections even if nodes are hidden
+        // But we still need the nodes to be in the positioned map
+        if (!sourceNode || !targetNode) {
+          // Debug: count missing nodes for reference links
+          if (link.type === 'reference') {
+            if (!sourceNode) {
+              missingSourceCount++;
+            }
+            if (!targetNode) {
+              missingTargetCount++;
+            }
+          }
+          return null;
+        }
+        // Skip if nodes are hidden (but still create connection if they're just filtered)
+        if (sourceNode.isHidden || targetNode.isHidden) {
+          return null;
+        }
         if (sourceNode && targetNode) {
           // Validate node positions are valid numbers
           const sourceX = typeof sourceNode.x === 'number' && !isNaN(sourceNode.x) ? sourceNode.x : 0;
@@ -2640,15 +3320,37 @@ const TokenGraph = forwardRef(function TokenGraph({
             return null;
           }
           
-          // Determine which side to connect from based on relative positions
-          // If target is to the right of source, connect from source's right side to target's left side
-          // If target is to the left of source, connect from source's left side to target's right side
-          const sourceCenterX = sourceX + NODE_WIDTH / 2;
-          const targetCenterX = targetX + NODE_WIDTH / 2;
+          // For reference links:
+          // - Source (referencing token) connects from its right side (outgoing reference)
+          // - Target (referenced token) connects to its left side (incoming reference from target's perspective)
+          // This means:
+          //   - Left side of a token shows: tokens that THIS token references (outgoing)
+          //   - Right side of a token shows: tokens that reference THIS token (incoming)
           const sourceYCenter = sourceY + NODE_HEIGHT / 2;
           const targetYCenter = targetY + NODE_HEIGHT / 2;
           
-          // Choose connection side based on which is closer/better aligned
+          if (link.type === 'reference') {
+            // For reference links:
+            // - Left side of a token: tokens that THIS token references (where it gets its color from)
+            // - Right side of a token: tokens that reference THIS token (where this token is being used)
+            // 
+            // So for link A -> B (A references B):
+            // - A connects from its left side (pointing to B, what A references - where A gets its color)
+            // - B connects to its right side (receiving from A, what uses B - where B is being used)
+            return {
+              ...link,
+              sourceX: sourceX, // Source's left side (pointing to what it references)
+              sourceY: sourceYCenter,
+              targetX: targetX + NODE_WIDTH, // Target's right side (receiving incoming references)
+              targetY: targetYCenter,
+              sourceSide: 'left',
+              targetSide: 'right'
+            };
+          }
+          
+          // For other link types, use relative positioning
+          const sourceCenterX = sourceX + NODE_WIDTH / 2;
+          const targetCenterX = targetX + NODE_WIDTH / 2;
           const useRightSide = targetCenterX > sourceCenterX;
           
           return {
@@ -2664,7 +3366,11 @@ const TokenGraph = forwardRef(function TokenGraph({
         return null;
       })
       .filter(Boolean);
-  }, [graph.links, positionedNodesMap, focusMode]);
+    
+    const referenceConnections = processedConnections.filter(c => c.type === 'reference');
+    
+    return processedConnections;
+  }, [graph.links, positionedNodesMap, focusMode, selectedMode]);
 
   // Helper function to get all children (including grandchildren) of a node
   const getAllChildren = useCallback((nodeId) => {
@@ -2673,7 +3379,7 @@ const TokenGraph = forwardRef(function TokenGraph({
     
     // Direct children
     let children = nodes.filter(n => 
-      n.masterGroupId === nodeId || 
+      n.layerGroupId === nodeId || 
       n.groupId === nodeId || 
       n.opacityGroupId === nodeId
     );
@@ -2700,7 +3406,7 @@ const TokenGraph = forwardRef(function TokenGraph({
     const positions = selectedTokens.map(id => {
       const node = positionedNodesRef.current.find(n => n.id === id);
       if (!node) return null;
-      const key = node.isMasterGroup ? `master-${id}` :
+      const key = node.isLayerGroup ? `layer-${id}` :
                  node.isGroup ? (node.id.startsWith('category:') ? `category-${id}` : `group-${id}`) :
                  `${node.column}-${id}`;
       const pos = nodePositionsRef.current.get(key) || { x: node.x, y: node.y };
@@ -2726,7 +3432,7 @@ const TokenGraph = forwardRef(function TokenGraph({
     const positions = selectedTokens.map(id => {
       const node = positionedNodesRef.current.find(n => n.id === id);
       if (!node) return null;
-      const key = node.isMasterGroup ? `master-${id}` :
+      const key = node.isLayerGroup ? `layer-${id}` :
                  node.isGroup ? (node.id.startsWith('category:') ? `category-${id}` : `group-${id}`) :
                  `${node.column}-${id}`;
       const pos = nodePositionsRef.current.get(key) || { x: node.x, y: node.y };
@@ -2810,8 +3516,10 @@ const TokenGraph = forwardRef(function TokenGraph({
               return (
                 <>
                   {normalConnections.map(({ conn, idx, isChainConnection }) => {
-                    // Fade to 15% only when a token is selected, otherwise normal opacity
-                    const opacity = focusMode && !isChainConnection ? 0.1 : (hasSelection ? 0.15 : 0.4);
+                    // For reference links, use higher opacity to make them more visible
+                    const isReference = conn.type === 'reference';
+                    // Fade to 15% only when a token is selected, otherwise normal opacity (higher for references)
+                    const opacity = focusMode && !isChainConnection ? 0.1 : (hasSelection ? 0.15 : (isReference ? 0.6 : 0.4));
                     return (
                       <TokenConnection
                         key={`normal-${conn.source}-${conn.target}-${idx}`}
@@ -2865,46 +3573,51 @@ const TokenGraph = forwardRef(function TokenGraph({
         )}
 
         {/* Render sidebar indicators for parent-child relationships - hide in focus mode and during drag */}
-        {!focusMode && !isDraggingNodeRef.current && positionedNodes && positionedNodes.length > 0 && positionedNodes.map(node => {
-          if (node.isMasterGroup || node.isGroup) {
+        {!focusMode && !isDraggingNodeRef.current && positionedNodes && positionedNodes.length > 0 && positionedNodes.filter(node => !node.isHidden).map(node => {
+          if (node.isLayerGroup || node.isGroup) {
             // Find all direct children of this parent
             let children = [];
-            if (node.isMasterGroup) {
-              // Master group's direct children are category/palette groups (including opacity group)
-              children = positionedNodes.filter(n => 
-                n.masterGroupId === node.id && 
+            if (node.isLayerGroup) {
+              // Layer group's children include all groups and tokens that belong to this layer
+              // This includes direct child groups AND all tokens that belong to those groups
+              const childGroups = positionedNodes.filter(n => 
+                n.layerGroupId === node.id && 
                 n.isGroup && 
-                !n.isMasterGroup &&
+                !n.isLayerGroup &&
                 !n.opacityGroupId // Exclude opacity palette groups (they're children of opacity group)
               );
-            } else if (node.id === 'group:opacity') {
-              // Opacity group's direct children are opacity palette groups (e.g., "black", "blue")
-              children = positionedNodes.filter(n => 
-                n.opacityGroupId === node.id && 
-                n.isGroup && 
-                !n.isMasterGroup
+              const childTokens = positionedNodes.filter(n => 
+                n.layerGroupId === node.id && 
+                !n.isGroup && 
+                !n.isLayerGroup &&
+                !n.isHidden
               );
-            } else if (node.isGroup && node.opacityGroupId) {
+              children = [...childGroups, ...childTokens];
+            } else if (node.isGroup && node.id.startsWith('group:opacity:')) {
               // Opacity palette group's direct children are opacity tokens
               children = positionedNodes.filter(n => 
                 n.groupId === node.id && 
                 !n.isGroup && 
-                !n.isMasterGroup
+                !n.isLayerGroup &&
+                !n.isHidden
               );
             } else if (node.isGroup) {
               // Regular category/palette group's direct children are tokens
               children = positionedNodes.filter(n => 
                 n.groupId === node.id && 
                 !n.isGroup && 
-                !n.isMasterGroup
+                !n.isLayerGroup &&
+                !n.isHidden
               );
             }
             
             if (children.length > 0) {
-              const firstChild = children[0];
-              const lastChild = children[children.length - 1];
+              // Sort children by Y position to find first and last
+              const sortedChildren = [...children].sort((a, b) => a.y - b.y);
+              const firstChild = sortedChildren[0];
+              const lastChild = sortedChildren[sortedChildren.length - 1];
               const sidebarX = node.x + 4; // Moved 8px to the right (from -4 to +4)
-              const sidebarTop = node.y + NODE_HEIGHT;
+              const sidebarTop = node.y + (node.isLayerGroup ? 40 : NODE_HEIGHT); // Layer groups are 40px tall
               const sidebarHeight = lastChild.y + NODE_HEIGHT - sidebarTop;
               
               return (
@@ -2925,7 +3638,7 @@ const TokenGraph = forwardRef(function TokenGraph({
         })}
 
         {/* Render nodes */}
-        {positionedNodes && positionedNodes.length > 0 && positionedNodes.map((node, index) => {
+        {positionedNodes && positionedNodes.length > 0 && positionedNodes.filter(node => !node.isHidden).map((node, index) => {
           // In focus mode, use linear positions for chain nodes, fade others
           const isInChain = focusMode && focusMode.chain.includes(node.id);
           const linearPos = focusMode?.linearPositions?.find(p => p.id === node.id);
@@ -2933,7 +3646,7 @@ const TokenGraph = forwardRef(function TokenGraph({
           const displayY = focusMode && linearPos ? linearPos.focusY : node.y;
           
           // Check if this node is being dragged
-          const key = node.isMasterGroup ? `master-${node.id}` :
+          const key = node.isLayerGroup ? `layer-${node.id}` :
                      node.isGroup ? (node.id.startsWith('category:') ? `category-${node.id}` : `group-${node.id}`) :
                      `${node.column}-${node.id}`;
           const isBeingDragged = isDraggingNodeRef.current && dragOriginalPositionsRef.current.has(key);
@@ -2974,14 +3687,14 @@ const TokenGraph = forwardRef(function TokenGraph({
           );
           
           // Find parent node for sidebar indicator
-          // For opacity tokens: opacityGroupId -> opacity palette group -> opacity group -> master group
-          // For regular tokens: groupId -> category/palette group -> master group
+          // For opacity tokens: opacityGroupId -> opacity palette group -> opacity group -> layer group
+          // For regular tokens: groupId -> category/palette group -> layer group
           const parentNode = node.groupId 
             ? positionedNodes.find(n => n.id === node.groupId)
             : node.opacityGroupId && node.opacityGroupId !== 'group:opacity'
             ? positionedNodes.find(n => n.id === node.opacityGroupId)
-            : node.masterGroupId 
-            ? positionedNodes.find(n => n.id === node.masterGroupId)
+            : node.layerGroupId 
+            ? positionedNodes.find(n => n.id === node.layerGroupId)
             : null;
           
           // Store ref for direct DOM manipulation
@@ -3006,13 +3719,14 @@ const TokenGraph = forwardRef(function TokenGraph({
               parentNode={parentNode}
               isSelected={isSelectedToken || (!focusMode && selectedTokens.includes(node.id))}
               isHovered={hoverNodeId === node.id}
+              graphLinks={graph.links || []}
               onSelect={() => {
                 // Only select if we didn't drag
                 if (!hasDraggedRef.current) {
                   // In focus mode, only allow selecting tokens in the chain
                   if (focusMode) {
                     const isInChain = focusMode.chain.includes(node.id);
-                    if (isInChain && !node.isMasterGroup && !node.isGroup) {
+                    if (isInChain && !node.isLayerGroup && !node.isGroup) {
                       // Switch focus to the selected token in the chain
                       enterFocusMode(node.id);
                     }
@@ -3028,7 +3742,7 @@ const TokenGraph = forwardRef(function TokenGraph({
               onDoubleClick={() => {
                 // Double click: groups collapse/expand, tokens enter focus mode
                 if (!hasDraggedRef.current) {
-                  if (node.isMasterGroup || node.isGroup) {
+                  if (node.isLayerGroup || node.isGroup) {
                     // Toggle collapse state for groups
                     setCollapsedGroups(prev => {
                       const newSet = new Set(prev);
@@ -3049,7 +3763,7 @@ const TokenGraph = forwardRef(function TokenGraph({
               onLeave={() => onHoverNodeChange('')}
               selectedMode={selectedMode}
               style={{ opacity, zIndex }}
-              isDraggable={node.isMasterGroup || node.isGroup}
+              isDraggable={node.isLayerGroup || node.isGroup}
               hasLeftConnection={hasLeftConnection}
               hasRightConnection={hasRightConnection}
             />

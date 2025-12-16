@@ -3,17 +3,16 @@ import Sidebar from './components/Sidebar';
 import TokenGraph from './components/TokenGraph';
 import Toolbar from './components/Toolbar';
 import Minimap from './components/Minimap';
-import { parseFile, parseTSXWithPrimitives } from './utils/fileParser';
+import { parseFile, parseTSXWithPrimitives, parseJSONFile } from './utils/fileParser';
+import tokensData from './lib/mana/tokens.json';
 import './App.css';
 
-const MODES = ['default', 'blue', 'lime', 'orange', 'pink', 'purple', 'teal', 'yellow', 'hws'];
-
 function App() {
-  const [selectedMode, setSelectedMode] = useState('default');
+  const [selectedMode, setSelectedMode] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [tokenGraph, setTokenGraph] = useState({ nodes: [], links: [] });
   const [originalTeardropGraph, setOriginalTeardropGraph] = useState(null);
-  const [availableModes, setAvailableModes] = useState(MODES);
+  const [availableModes, setAvailableModes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedTokens, setSelectedTokens] = useState([]);
   const [panX, setPanX] = useState(380);
@@ -36,11 +35,31 @@ function App() {
     if (originalTeardropGraph) {
       // Use cached version
       setTokenGraph(originalTeardropGraph);
-      setAvailableModes(MODES);
-      setSelectedMode('default');
+      const modes = originalTeardropGraph.availableModes || [];
+      setAvailableModes(modes);
+      setSelectedMode(modes.length > 0 ? modes[0] : null);
       setLoading(false);
     } else {
-      // Try to fetch from public directory, but don't fail if it doesn't exist
+      try {
+        // Try to parse the imported tokens.json first
+        if (tokensData) {
+          const parsed = parseJSONFile(tokensData);
+          if (parsed.nodes && parsed.nodes.length > 0) {
+            setTokenGraph(parsed);
+            setOriginalTeardropGraph(parsed);
+            // Use modes from parsed data only
+            const modes = parsed.availableModes || [];
+            setAvailableModes(modes);
+            setSelectedMode(modes.length > 0 ? modes[0] : null);
+            setLoading(false);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to parse tokens.json:', err);
+      }
+
+      // Fallback: Try to fetch from public directory, but don't fail if it doesn't exist
       // Users can upload their own JSON file
       const baseUrl = import.meta.env.BASE_URL;
       fetch(`${baseUrl}token-graph.json`)
@@ -55,13 +74,14 @@ function App() {
           if (data.nodes && data.nodes.length > 0) {
             setTokenGraph(data);
             setOriginalTeardropGraph(data);
-            setAvailableModes(MODES);
-            setSelectedMode('default');
+            const modes = data.availableModes || [];
+            setAvailableModes(modes);
+            setSelectedMode(modes.length > 0 ? modes[0] : null);
           } else {
             // No default graph, user needs to upload
             setTokenGraph({ nodes: [], links: [] });
-            setAvailableModes(MODES);
-            setSelectedMode('default');
+            setAvailableModes([]);
+            setSelectedMode(null);
           }
           setLoading(false);
         })
@@ -70,8 +90,8 @@ function App() {
             console.log('No default token graph found. Please upload a JSON file.');
           }
           setTokenGraph({ nodes: [], links: [] });
-          setAvailableModes(MODES);
-          setSelectedMode('default');
+          setAvailableModes([]);
+          setSelectedMode(null);
           setLoading(false);
         });
     }
@@ -156,77 +176,146 @@ function App() {
     return tokenName.includes('_') && !tokenName.includes('.');
   };
 
-  // Organize tokens into master groups: Components, Semantic, Primitives
+  // Organize tokens into layer groups: Components, Semantic, Primitives
   // Group tokens by their prefix (e.g., "radio", "text", "icon")
   const organizedGraph = useMemo(() => {
-    const componentNodes = tokenGraph.nodes.filter(n => n.layer === 'component').sort(naturalSort);
-    const semanticNodes = tokenGraph.nodes.filter(n => n.layer === 'semantic').sort(naturalSort);
-    const primitiveNodes = tokenGraph.nodes.filter(n => n.layer === 'primitive').sort(naturalSort);
-
-    // Create master parent groups - ordered: Primitives, Semantic, Components
-    const masterGroups = [
-      {
-        id: 'master:primitives',
-        name: 'Primitives',
-        type: 'master-group',
-        layer: 'primitive',
-        isMasterGroup: true,
-        childCount: primitiveNodes.length
-      },
-      {
-        id: 'master:semantic',
-        name: 'Semantic',
-        type: 'master-group',
-        layer: 'semantic',
-        isMasterGroup: true,
-        childCount: semanticNodes.length
-      },
-      {
-        id: 'master:components',
-        name: 'Components',
-        type: 'master-group',
-        layer: 'component',
-        isMasterGroup: true,
-        childCount: componentNodes.length
+    // Group nodes by layer
+    const nodesByLayer = new Map();
+    tokenGraph.nodes.forEach(node => {
+      const layer = node.layer || 'global'; // Default to global if no layer
+      if (!nodesByLayer.has(layer)) {
+        nodesByLayer.set(layer, []);
       }
-    ];
+      nodesByLayer.get(layer).push(node);
+    });
+
+    // Create layer parent groups dynamically from layers found in the data
+    const layerGroups = [];
+    // Preferred order for layers that exist in the data
+    const preferredOrder = ['primitive', 'global', 'semantic', 'shared', 'component'];
+    const layerNames = {
+      'primitive': 'Primitives',
+      'global': 'Global',
+      'semantic': 'Semantic',
+      'shared': 'Shared',
+      'component': 'Components'
+    };
+
+    // Helper function to format layer name
+    const formatLayerName = (layer) => {
+      if (layerNames[layer]) {
+        return layerNames[layer];
+      }
+      // Capitalize first letter
+      return layer.charAt(0).toUpperCase() + layer.slice(1);
+    };
+
+    // Get all layers that actually have nodes
+    const existingLayers = Array.from(nodesByLayer.keys()).filter(layer => {
+      const nodes = nodesByLayer.get(layer) || [];
+      return nodes.length > 0;
+    });
+
+    // Sort existing layers according to preferred order, then add any others
+    const sortedLayers = [];
+    preferredOrder.forEach(layer => {
+      if (existingLayers.includes(layer)) {
+        sortedLayers.push(layer);
+      }
+    });
+    
+    // Add any layers not in preferred order
+    existingLayers.forEach(layer => {
+      if (!preferredOrder.includes(layer)) {
+        sortedLayers.push(layer);
+      }
+    });
+
+    // Create layer groups in the sorted order
+    sortedLayers.forEach(layer => {
+      const nodes = nodesByLayer.get(layer) || [];
+      if (nodes.length > 0) {
+        const layerGroup = {
+          id: `layer:${layer}`,
+          name: formatLayerName(layer),
+          type: 'layer-group',
+          layer: layer,
+          isLayerGroup: true,
+          childCount: nodes.length
+        };
+        layerGroups.push(layerGroup);
+      }
+    });
+
+    // Create a map of layer to layer group ID for easy lookup
+    const layerToLayerGroupId = new Map();
+    layerGroups.forEach(lg => {
+      layerToLayerGroupId.set(lg.layer, lg.id);
+    });
+    
+    // Helper function to get layer group ID for a layer
+    const getLayerGroupId = (layer) => {
+      return layerToLayerGroupId.get(layer) || `layer:${layer}`;
+    };
+
+    // Get nodes by layer for processing
+    const componentNodes = nodesByLayer.get('component') || [];
+    const primitiveNodes = nodesByLayer.get('primitive') || [];
+    
+    // Get all other layers (global, shared, semantic, etc.) - any layer that's not primitive or component
+    const otherLayers = Array.from(nodesByLayer.keys()).filter(layer => 
+      layer !== 'primitive' && layer !== 'component'
+    );
+    
+    // Process each other layer (global, shared, etc.)
+    const layerNodesMap = new Map();
+    otherLayers.forEach(layer => {
+      const nodes = nodesByLayer.get(layer) || [];
+      nodes.sort(naturalSort);
+      layerNodesMap.set(layer, nodes);
+    });
+    
+    // Sort nodes
+    componentNodes.sort(naturalSort);
+    primitiveNodes.sort(naturalSort);
 
     // Group component tokens by prefix (e.g., "radio", "button", etc.)
     // Handle both dot-separated and underscore-separated tokens
     const componentCategoryGroups = new Map();
-    const componentUnderscoreGroups = new Map(); // For hierarchical underscore groups
+    const componentUnderscoreGroups = new Map(); // For one-level underscore groups
+    const componentDotGroups = new Map(); // For one-level dot groups
     componentNodes.forEach(node => {
       if (usesUnderscores(node.name)) {
-        // For underscore-separated tokens, build hierarchical groups
-        const groups = buildUnderscoreGroups(node.name);
-        if (groups.length > 0) {
-          // Create all group levels
-          groups.forEach((groupPath, index) => {
-            if (!componentUnderscoreGroups.has(groupPath)) {
-              // Display name: show the full path for clarity
-              componentUnderscoreGroups.set(groupPath, {
-                id: `group:component:${groupPath}`,
-                name: groupPath, // Show full path for clarity
-                fullPath: groupPath,
-                parentPath: index > 0 ? groups[index - 1] : null,
-                tokens: [],
-                level: index
-              });
-            }
+        // For underscore-separated tokens, only use the first part as the group
+        const rootCategory = node.name.split('_')[0];
+        if (!componentUnderscoreGroups.has(rootCategory)) {
+          componentUnderscoreGroups.set(rootCategory, {
+            id: `group:component:${rootCategory}`,
+            name: rootCategory,
+            fullPath: rootCategory,
+            parentPath: null,
+            tokens: [],
+            level: 0
           });
-          // Add token to the deepest group (last one)
-          const deepestGroup = groups[groups.length - 1];
-          componentUnderscoreGroups.get(deepestGroup).tokens.push(node);
-        } else {
-          // Single part token (no underscores), add to root category
-          const rootCategory = node.name.split('_')[0];
-          if (!componentCategoryGroups.has(rootCategory)) {
-            componentCategoryGroups.set(rootCategory, []);
-          }
-          componentCategoryGroups.get(rootCategory).push(node);
         }
+        componentUnderscoreGroups.get(rootCategory).tokens.push(node);
+      } else if (node.name.includes('.') && !node.name.includes('_')) {
+        // For dot-separated tokens, only use the first part as the group
+        // e.g., "button.background.primary.default" -> group "button"
+        const rootCategory = node.name.split('.')[0];
+        if (!componentDotGroups.has(rootCategory)) {
+          componentDotGroups.set(rootCategory, {
+            id: `group:component:${rootCategory}`,
+            name: rootCategory,
+            fullPath: rootCategory,
+            parentPath: null,
+            tokens: [],
+            level: 0
+          });
+        }
+        componentDotGroups.get(rootCategory).tokens.push(node);
       } else {
-        // Dot-separated tokens use the existing logic
+        // Single part token, use category grouping
         const category = getCategoryPrefix(node.name);
         if (!componentCategoryGroups.has(category)) {
           componentCategoryGroups.set(category, []);
@@ -235,85 +324,132 @@ function App() {
       }
     });
 
-    // Group semantic tokens by prefix (e.g., "text", "icon", "background", etc.)
-    // Handle both dot-separated and underscore-separated tokens
-    const semanticCategoryGroups = new Map();
-    const semanticUnderscoreGroups = new Map(); // For hierarchical underscore groups
-    const semanticDotGroups = new Map(); // For hierarchical dot groups (2-layer deep)
-    
-    semanticNodes.forEach(node => {
-      if (usesUnderscores(node.name)) {
-        // For underscore-separated tokens, build hierarchical groups
-        const groups = buildUnderscoreGroups(node.name);
-        if (groups.length > 0) {
-          // Create all group levels
-          groups.forEach((groupPath, index) => {
-            if (!semanticUnderscoreGroups.has(groupPath)) {
-              // Display name: show the full path for clarity
-              semanticUnderscoreGroups.set(groupPath, {
-                id: `group:semantic:${groupPath}`,
-                name: groupPath, // Show full path for clarity
-                fullPath: groupPath,
-                parentPath: index > 0 ? groups[index - 1] : null,
-                tokens: [],
-                level: index
-              });
-            }
-          });
-          // Add token to the deepest group (last one)
-          const deepestGroup = groups[groups.length - 1];
-          semanticUnderscoreGroups.get(deepestGroup).tokens.push(node);
-        } else {
-          // Single part token (no underscores), add to root category
+    // Helper function to process tokens for any layer (global, shared, semantic, etc.)
+    // Only creates one level of groups - all tokens go directly under the top-level group
+    const processLayerTokens = (layerName, nodes) => {
+      const categoryGroups = new Map();
+      const underscoreGroups = new Map();
+      const dotGroups = new Map();
+      
+      nodes.forEach(node => {
+        if (usesUnderscores(node.name)) {
+          // For underscore-separated tokens, only use the first part as the group
           const rootCategory = node.name.split('_')[0];
-          if (!semanticCategoryGroups.has(rootCategory)) {
-            semanticCategoryGroups.set(rootCategory, []);
+          if (!underscoreGroups.has(rootCategory)) {
+            underscoreGroups.set(rootCategory, {
+              id: `group:${layerName}:${rootCategory}`,
+              name: rootCategory,
+              fullPath: rootCategory,
+              parentPath: null,
+              tokens: [],
+              level: 0
+            });
           }
-          semanticCategoryGroups.get(rootCategory).push(node);
-        }
-      } else if (node.name.includes('.') && !node.name.includes('_')) {
-        // For dot-separated tokens, build hierarchical groups (2-layer deep)
-        const groups = buildDotGroups(node.name);
-        if (groups.length > 0) {
-          // Create all group levels
-          groups.forEach((groupPath, index) => {
-            if (!semanticDotGroups.has(groupPath)) {
-              semanticDotGroups.set(groupPath, {
-                id: `group:semantic:${groupPath}`,
-                name: groupPath,
-                fullPath: groupPath,
-                parentPath: index > 0 ? groups[index - 1] : null,
-                tokens: [],
-                level: index
-              });
-            }
-          });
-          // Add token to the deepest group (last one)
-          const deepestGroup = groups[groups.length - 1];
-          semanticDotGroups.get(deepestGroup).tokens.push(node);
+          underscoreGroups.get(rootCategory).tokens.push(node);
+        } else if (node.name.includes('.') && !node.name.includes('_')) {
+          // For dot-separated tokens, only use the first part as the group
+          // e.g., "input.border.active" -> group "input"
+          const rootCategory = node.name.split('.')[0];
+          if (!dotGroups.has(rootCategory)) {
+            dotGroups.set(rootCategory, {
+              id: `group:${layerName}:${rootCategory}`,
+              name: rootCategory,
+              fullPath: rootCategory,
+              parentPath: null,
+              tokens: [],
+              level: 0
+            });
+          }
+          dotGroups.get(rootCategory).tokens.push(node);
         } else {
-          // Single part token (no dots), use category grouping
+          // Single part token, use category grouping
           const category = getCategoryPrefix(node.name);
-          if (!semanticCategoryGroups.has(category)) {
-            semanticCategoryGroups.set(category, []);
+          if (!categoryGroups.has(category)) {
+            categoryGroups.set(category, []);
           }
-          semanticCategoryGroups.get(category).push(node);
+          categoryGroups.get(category).push(node);
         }
-      } else {
-        // Single part token, use category grouping
-        const category = getCategoryPrefix(node.name);
-        if (!semanticCategoryGroups.has(category)) {
-          semanticCategoryGroups.set(category, []);
-        }
-        semanticCategoryGroups.get(category).push(node);
-      }
+      });
+      
+      return { categoryGroups, underscoreGroups, dotGroups };
+    };
+    
+    // Process all other layers (global, shared, semantic, etc.) separately
+    const allLayerGroups = new Map(); // Map of layerName -> { categoryGroups, underscoreGroups, dotGroups, categoryNodes, dotGroupNodes, underscoreGroupNodes }
+    layerNodesMap.forEach((nodes, layerName) => {
+      const groups = processLayerTokens(layerName, nodes);
+      allLayerGroups.set(layerName, groups);
+    });
+    
+    // Create group nodes for each layer
+    const allLayerCategoryNodes = [];
+    const allLayerDotGroupNodes = [];
+    const allLayerUnderscoreGroupNodes = [];
+    
+    allLayerGroups.forEach((groups, layerName) => {
+      // Category nodes for this layer
+      const categoryNodes = Array.from(groups.categoryGroups.entries()).map(([category, tokens]) => ({
+        id: `category:${category}`,
+        name: category,
+        type: 'category-group',
+        layer: layerName,
+        category: category,
+        isGroup: true,
+        layerGroupId: getLayerGroupId(layerName),
+        childCount: tokens.length
+      }));
+      allLayerCategoryNodes.push(...categoryNodes);
+      
+      // Dot group nodes for this layer (only one level, no nested groups)
+      const dotGroupNodes = Array.from(groups.dotGroups.values()).map(group => {
+        return {
+          id: group.id,
+          name: group.name,
+          type: 'category-group',
+          layer: layerName,
+          category: group.fullPath,
+          isGroup: true,
+          layerGroupId: getLayerGroupId(layerName),
+          parentGroupId: null,
+          childCount: group.tokens.length,
+          level: 0
+        };
+      });
+      allLayerDotGroupNodes.push(...dotGroupNodes);
+      
+      // Underscore group nodes for this layer (only one level, no nested groups)
+      const underscoreGroupNodes = Array.from(groups.underscoreGroups.values()).map(group => {
+        return {
+          id: group.id,
+          name: group.name,
+          type: 'category-group',
+          layer: layerName,
+          category: group.fullPath,
+          isGroup: true,
+          layerGroupId: getLayerGroupId(layerName),
+          parentGroupId: null,
+          childCount: group.tokens.length,
+          level: 0
+        };
+      });
+      allLayerUnderscoreGroupNodes.push(...underscoreGroupNodes);
+    });
+    
+    // Note: allLayerGroups contains groups for all non-primitive, non-component layers (global, shared, etc.)
+    // Build a combined category groups map for backward compatibility (used in filtering/search)
+    const semanticCategoryGroups = new Map();
+    allLayerGroups.forEach((groups, layerName) => {
+      groups.categoryGroups.forEach((tokens, category) => {
+        semanticCategoryGroups.set(category, tokens);
+      });
     });
 
     // Separate opacity tokens from other primitives
+    // Opacity tokens are structured as opacity.black.0, opacity.white.4, etc.
     const opacityNodes = primitiveNodes.filter(n => n.name.startsWith('opacity.'));
     const colorNodes = primitiveNodes.filter(n => !n.name.startsWith('opacity.'));
     
-    // Group color primitives by palette (nested under Primitives master group)
+    // Group color primitives by palette (extract from token name like "blue.1" -> palette "blue")
     // Handle both dot-separated and underscore-separated tokens
     const primitiveGroups = new Map();
     const primitiveUnderscoreGroups = new Map(); // For hierarchical underscore groups
@@ -340,16 +476,17 @@ function App() {
           const deepestGroup = groups[groups.length - 1];
           primitiveUnderscoreGroups.get(deepestGroup).tokens.push(node);
         } else {
-          // Single part token, use palette grouping
-          const palette = node.palette || 'other';
+          // Single part token, extract palette from name
+          const palette = node.name.split('_')[0] || 'other';
           if (!primitiveGroups.has(palette)) {
             primitiveGroups.set(palette, []);
           }
           primitiveGroups.get(palette).push(node);
         }
       } else {
-        // Dot-separated tokens use palette grouping
-        const palette = node.palette || 'other';
+        // Dot-separated tokens: extract palette from first part (e.g., "blue.1" -> "blue")
+        const parts = node.name.split('.');
+        const palette = parts[0] || 'other';
         if (!primitiveGroups.has(palette)) {
           primitiveGroups.set(palette, []);
         }
@@ -411,7 +548,7 @@ function App() {
         layer: 'primitive',
         category: group.fullPath,
         isGroup: true,
-        masterGroupId: group.parentPath ? `group:opacity:${group.parentPath}` : 'group:opacity',
+        layerGroupId: group.parentPath ? `group:opacity:${group.parentPath}` : getLayerGroupId('primitive'),
         parentGroupId: group.parentPath ? `group:opacity:${group.parentPath}` : null,
         childCount: group.tokens.length + childGroupsCount,
         level: group.level
@@ -433,77 +570,19 @@ function App() {
 
     // Create category group nodes for components
     const componentCategoryNodes = Array.from(componentCategoryGroups.entries()).map(([category, tokens]) => ({
-      id: `category:component:${category}`,
+      id: `category:${category}`,
       name: category,
       type: 'category-group',
       layer: 'component',
       category: category,
       isGroup: true,
-      masterGroupId: 'master:components',
+      layerGroupId: getLayerGroupId('component'),
       childCount: tokens.length
     }));
 
-    // Create category group nodes for semantic
-    const semanticCategoryNodes = Array.from(semanticCategoryGroups.entries()).map(([category, tokens]) => ({
-      id: `category:semantic:${category}`,
-      name: category,
-      type: 'category-group',
-      layer: 'semantic',
-      category: category,
-      isGroup: true,
-      masterGroupId: 'master:semantic',
-      childCount: tokens.length
-    }));
-
-    // Create hierarchical group nodes for dot-separated semantic tokens (2-layer deep)
-    // Calculate childCount including both direct tokens and child groups
-    const semanticDotGroupNodes = Array.from(semanticDotGroups.values()).map(group => {
-      // Count child groups (groups that have this group as parent)
-      const childGroupsCount = Array.from(semanticDotGroups.values()).filter(
-        g => g.parentPath === group.fullPath
-      ).length;
-      return {
-        id: group.id,
-        name: group.name,
-        type: 'category-group',
-        layer: 'semantic',
-        category: group.fullPath,
-        isGroup: true,
-        masterGroupId: group.parentPath ? `group:semantic:${group.parentPath}` : 'master:semantic',
-        parentGroupId: group.parentPath ? `group:semantic:${group.parentPath}` : null,
-        childCount: group.tokens.length + childGroupsCount,
-        level: group.level
-      };
-    });
-
-    // Create hierarchical group nodes for underscore-separated semantic tokens
-    // Calculate childCount including both direct tokens and child groups
-    const semanticUnderscoreGroupNodes = Array.from(semanticUnderscoreGroups.values()).map(group => {
-      // Count child groups (groups that have this group as parent)
-      const childGroupsCount = Array.from(semanticUnderscoreGroups.values()).filter(
-        g => g.parentPath === group.fullPath
-      ).length;
-      return {
-        id: group.id,
-        name: group.name,
-        type: 'category-group',
-        layer: 'semantic',
-        category: group.fullPath,
-        isGroup: true,
-        masterGroupId: group.parentPath ? `group:semantic:${group.parentPath}` : 'master:semantic',
-        parentGroupId: group.parentPath ? `group:semantic:${group.parentPath}` : null,
-        childCount: group.tokens.length + childGroupsCount,
-        level: group.level
-      };
-    });
-
-    // Create hierarchical group nodes for underscore-separated component tokens
-    // Calculate childCount including both direct tokens and child groups
-    const componentUnderscoreGroupNodes = Array.from(componentUnderscoreGroups.values()).map(group => {
-      // Count child groups (groups that have this group as parent)
-      const childGroupsCount = Array.from(componentUnderscoreGroups.values()).filter(
-        g => g.parentPath === group.fullPath
-      ).length;
+    // Create hierarchical group nodes for dot-separated component tokens
+    const componentDotGroupNodes = Array.from(componentDotGroups.values()).map(group => {
+      // Only one level, no nested groups
       return {
         id: group.id,
         name: group.name,
@@ -511,10 +590,31 @@ function App() {
         layer: 'component',
         category: group.fullPath,
         isGroup: true,
-        masterGroupId: group.parentPath ? `group:component:${group.parentPath}` : 'master:components',
-        parentGroupId: group.parentPath ? `group:component:${group.parentPath}` : null,
-        childCount: group.tokens.length + childGroupsCount,
-        level: group.level
+        layerGroupId: getLayerGroupId('component'),
+        parentGroupId: null,
+        childCount: group.tokens.length,
+        level: 0
+      };
+    });
+
+    // Use the group nodes created for all layers above
+    const semanticCategoryNodes = allLayerCategoryNodes;
+    const semanticDotGroupNodes = allLayerDotGroupNodes;
+    const semanticUnderscoreGroupNodes = allLayerUnderscoreGroupNodes;
+
+    // Create group nodes for underscore-separated component tokens (only one level)
+    const componentUnderscoreGroupNodes = Array.from(componentUnderscoreGroups.values()).map(group => {
+      return {
+        id: group.id,
+        name: group.name,
+        type: 'category-group',
+        layer: 'component',
+        category: group.fullPath,
+        isGroup: true,
+        layerGroupId: getLayerGroupId('component'),
+        parentGroupId: null,
+        childCount: group.tokens.length,
+        level: 0
       };
     });
 
@@ -532,25 +632,14 @@ function App() {
         layer: 'primitive',
         category: group.fullPath,
         isGroup: true,
-        masterGroupId: group.parentPath ? `group:primitive:${group.parentPath}` : 'master:primitives',
+        layerGroupId: group.parentPath ? `group:primitive:${group.parentPath}` : getLayerGroupId('primitive'),
         parentGroupId: group.parentPath ? `group:primitive:${group.parentPath}` : null,
         childCount: group.tokens.length + childGroupsCount,
         level: group.level
       };
     });
 
-    
-    // Create opacity intermediate group
-    const opacityGroupNode = opacityNodes.length > 0 ? {
-      id: 'group:opacity',
-      name: 'Opacity',
-      type: 'group',
-      layer: 'primitive',
-      isGroup: true,
-      masterGroupId: 'master:primitives',
-      childCount: opacityGroupNodes.length > 0 ? opacityGroupNodes.filter(g => !g.parentGroupId).length : opacityNodes.length,
-      isOpacityGroup: true
-    } : null;
+    // No intermediate opacity group - opacity tokens are grouped hierarchically and linked directly to primitive layer
     
     // Create palette group nodes for color primitives
     const paletteGroupNodes = Array.from(primitiveGroups.entries()).map(([palette, tokens]) => ({
@@ -560,81 +649,108 @@ function App() {
       layer: 'primitive',
       palette: palette,
       isGroup: true,
-      masterGroupId: 'master:primitives',
+      layerGroupId: getLayerGroupId('primitive'),
       childCount: tokens.length
     }));
 
-    // Create links from master groups to category groups
-    const masterLinks = [];
+    // Create links from layer groups to category groups
+    const layerLinks = [];
     
-    // Components master group links to category groups
+    // Components layer group links to category groups
     componentCategoryNodes.forEach(group => {
-      masterLinks.push({
-        source: 'master:components',
+      layerLinks.push({
+        source: getLayerGroupId('component'),
         target: group.id,
-        type: 'master-group-member'
+        type: 'layer-group-member'
       });
     });
 
-    // Semantic master group links to category groups
+    // All other layers (global, shared, semantic, etc.) layer group links to category groups
     semanticCategoryNodes.forEach(group => {
-      masterLinks.push({
-        source: 'master:semantic',
+      layerLinks.push({
+        source: getLayerGroupId(group.layer),
         target: group.id,
-        type: 'master-group-member'
+        type: 'layer-group-member'
       });
     });
 
-    // Semantic master group links to dot groups (root level only)
+    // Component layer group links to dot groups (root level only)
+    componentDotGroupNodes.forEach(group => {
+      if (!group.parentGroupId) {
+        layerLinks.push({
+          source: getLayerGroupId('component'),
+          target: group.id,
+          type: 'layer-group-member'
+        });
+      }
+    });
+
+    // All other layers (global, shared, semantic, etc.) layer group links to dot groups (root level only)
     semanticDotGroupNodes.forEach(group => {
       if (!group.parentGroupId) {
-        masterLinks.push({
-          source: 'master:semantic',
+        layerLinks.push({
+          source: getLayerGroupId(group.layer),
           target: group.id,
-          type: 'master-group-member'
+          type: 'layer-group-member'
         });
       }
     });
 
-    // Primitives master group links to opacity group (if it exists)
-    if (opacityGroupNode) {
-      masterLinks.push({
-        source: 'master:primitives',
-        target: opacityGroupNode.id,
-        type: 'master-group-member'
-      });
-    }
-    
-    // Opacity group links to root opacity groups (only root level, not nested)
+    // Primitives layer group links directly to root opacity groups (only root level, not nested)
     opacityGroupNodes.forEach(group => {
       if (!group.parentGroupId) {
-        masterLinks.push({
-          source: 'group:opacity',
+        layerLinks.push({
+          source: getLayerGroupId('primitive'),
           target: group.id,
-          type: 'group-member'
+          type: 'layer-group-member'
         });
       }
     });
     
-    // Primitives master group links to color palette groups
+    // Primitives layer group links to color palette groups
     paletteGroupNodes.forEach(group => {
-      masterLinks.push({
-        source: 'master:primitives',
+      layerLinks.push({
+        source: getLayerGroupId('primitive'),
         target: group.id,
-        type: 'master-group-member'
+        type: 'layer-group-member'
       });
     });
 
     // Create links from category groups to their tokens
     const categoryLinks = [];
     
-    // Component category links (for dot-separated and single-level tokens)
+    // Component category links (for single-level tokens only, exclude dot-separated tokens that are in dot groups)
     componentNodes.forEach(node => {
-      if (!usesUnderscores(node.name)) {
+      // Only add to category if it's not in a dot group (dot-separated tokens are handled separately)
+      const isInDotGroup = Array.from(componentDotGroups.values()).some(g => 
+        g.tokens.some(t => t.id === node.id)
+      );
+      if (!usesUnderscores(node.name) && !node.name.includes('.') && !isInDotGroup) {
         const category = getCategoryPrefix(node.name);
         categoryLinks.push({
-          source: `category:component:${category}`,
+          source: `category:${category}`,
           target: node.id,
+          type: 'group-member'
+        });
+      }
+    });
+
+    // Component dot group links (for hierarchical dot-separated tokens)
+    componentDotGroups.forEach((group) => {
+      // Link tokens to their deepest group
+      group.tokens.forEach(token => {
+        categoryLinks.push({
+          source: group.id,
+          target: token.id,
+          type: 'group-member'
+        });
+      });
+      // Link parent groups to child groups
+      if (group.parentPath) {
+        const parentId = `group:component:${group.parentPath}`;
+        categoryLinks.push({
+          source: parentId,
+          target: group.id,
           type: 'group-member'
         });
       }
@@ -659,78 +775,83 @@ function App() {
           type: 'group-member'
         });
       } else {
-        // Link root groups to master component group
+        // Link root groups to layer component group
         categoryLinks.push({
-          source: 'master:components',
+          source: getLayerGroupId('component'),
           target: group.id,
-          type: 'master-group-member'
+          type: 'layer-group-member'
         });
       }
     });
 
-    // Semantic category links (for single-level tokens only, exclude dot-separated tokens that are in dot groups)
-    semanticNodes.forEach(node => {
-      // Only add to category if it's not in a dot group (dot-separated tokens are handled separately)
-      const isInDotGroup = Array.from(semanticDotGroups.values()).some(g => 
-        g.tokens.some(t => t.id === node.id)
-      );
-      if (!usesUnderscores(node.name) && !node.name.includes('.') && !isInDotGroup) {
-        const category = getCategoryPrefix(node.name);
-        categoryLinks.push({
-          source: `category:semantic:${category}`,
-          target: node.id,
-          type: 'group-member'
-        });
-      }
-    });
-
-    // Semantic dot group links (for hierarchical dot-separated tokens, 2-layer deep)
-    semanticDotGroups.forEach((group) => {
-      // Link tokens to their deepest group
-      group.tokens.forEach(token => {
-        categoryLinks.push({
-          source: group.id,
-          target: token.id,
-          type: 'group-member'
-        });
+    // Process all other layers (global, shared, semantic, etc.) - create links for each layer
+    allLayerGroups.forEach((groups, layerName) => {
+      const layerNodes = layerNodesMap.get(layerName) || [];
+      
+      // Category links for this layer (for single-level tokens only, exclude dot-separated tokens that are in dot groups)
+      layerNodes.forEach(node => {
+        // Only add to category if it's not in a dot group (dot-separated tokens are handled separately)
+        const isInDotGroup = Array.from(groups.dotGroups.values()).some(g => 
+          g.tokens.some(t => t.id === node.id)
+        );
+        if (!usesUnderscores(node.name) && !node.name.includes('.') && !isInDotGroup) {
+          const category = getCategoryPrefix(node.name);
+          categoryLinks.push({
+            source: `category:${category}`,
+            target: node.id,
+            type: 'group-member'
+          });
+        }
       });
-      // Link parent groups to child groups
-      if (group.parentPath) {
-        const parentId = `group:semantic:${group.parentPath}`;
-        categoryLinks.push({
-          source: parentId,
-          target: group.id,
-          type: 'group-member'
-        });
-      }
-    });
 
-    // Semantic underscore group links (for hierarchical underscore-separated tokens)
-    semanticUnderscoreGroups.forEach((group) => {
-      // Link tokens to their deepest group
-      group.tokens.forEach(token => {
-        categoryLinks.push({
-          source: group.id,
-          target: token.id,
-          type: 'group-member'
+      // Dot group links for this layer (for hierarchical dot-separated tokens, 2-layer deep)
+      groups.dotGroups.forEach((group) => {
+        // Link tokens to their deepest group
+        group.tokens.forEach(token => {
+          categoryLinks.push({
+            source: group.id,
+            target: token.id,
+            type: 'group-member'
+          });
         });
+        // Link parent groups to child groups
+        if (group.parentPath) {
+          const parentId = `group:${layerName}:${group.parentPath}`;
+          categoryLinks.push({
+            source: parentId,
+            target: group.id,
+            type: 'group-member'
+          });
+        }
       });
-      // Link parent groups to child groups
-      if (group.parentPath) {
-        const parentId = `group:semantic:${group.parentPath}`;
-        categoryLinks.push({
-          source: parentId,
-          target: group.id,
-          type: 'group-member'
+
+      // Underscore group links for this layer (for hierarchical underscore-separated tokens)
+      groups.underscoreGroups.forEach((group) => {
+        // Link tokens to their deepest group
+        group.tokens.forEach(token => {
+          categoryLinks.push({
+            source: group.id,
+            target: token.id,
+            type: 'group-member'
+          });
         });
-      } else {
-        // Link root groups to master semantic group
-        categoryLinks.push({
-          source: 'master:semantic',
-          target: group.id,
-          type: 'master-group-member'
-        });
-      }
+        // Link parent groups to child groups
+        if (group.parentPath) {
+          const parentId = `group:${layerName}:${group.parentPath}`;
+          categoryLinks.push({
+            source: parentId,
+            target: group.id,
+            type: 'group-member'
+          });
+        } else {
+          // Link root groups to layer group
+          categoryLinks.push({
+            source: getLayerGroupId(layerName),
+            target: group.id,
+            type: 'layer-group-member'
+          });
+        }
+      });
     });
 
     // Create links from palette groups to their primitive tokens
@@ -760,7 +881,9 @@ function App() {
     // Color primitive palette links (for dot-separated tokens)
     colorNodes.forEach(node => {
       if (!usesUnderscores(node.name)) {
-        const palette = node.palette || 'other';
+        // Extract palette from token name (e.g., "blue.1" -> "blue")
+        const parts = node.name.split('.');
+        const palette = parts[0] || 'other';
         paletteLinks.push({
           source: `group:${palette}`,
           target: node.id,
@@ -788,41 +911,53 @@ function App() {
           type: 'group-member'
         });
       } else {
-        // Link root groups to master primitives group
+        // Link root groups to layer primitives group
         paletteLinks.push({
-          source: 'master:primitives',
+          source: getLayerGroupId('primitive'),
           target: group.id,
-          type: 'master-group-member'
+          type: 'layer-group-member'
         });
       }
     });
 
     const allCategoryGroups = [
       ...componentCategoryNodes,
+      ...componentDotGroupNodes,
       ...componentUnderscoreGroupNodes,
       ...semanticCategoryNodes,
       ...semanticDotGroupNodes,
       ...semanticUnderscoreGroupNodes,
-      ...(opacityGroupNode ? [opacityGroupNode] : []),
       ...opacityGroupNodes,
       ...paletteGroupNodes,
       ...primitiveUnderscoreGroupNodes
     ];
 
+    // Create dynamic columns object with all layers
+    const columns = {
+      groups: allCategoryGroups,
+      layerGroups: layerGroups
+    };
+    
+    // Add nodes for each layer dynamically
+    nodesByLayer.forEach((nodes, layer) => {
+      columns[layer] = nodes;
+    });
+
     return {
-      columns: {
-        component: componentNodes,
-        semantic: semanticNodes,
-        primitive: primitiveNodes,
-        groups: allCategoryGroups,
-        masterGroups: masterGroups
-      },
-      links: [...tokenGraph.links, ...masterLinks, ...categoryLinks, ...paletteLinks],
-      allNodes: [...tokenGraph.nodes, ...masterGroups, ...allCategoryGroups],
+      columns: columns,
+      links: [...tokenGraph.links, ...layerLinks, ...categoryLinks, ...paletteLinks],
+      allNodes: [...tokenGraph.nodes, ...layerGroups, ...allCategoryGroups],
           primitiveGroups: Object.fromEntries(primitiveGroups),
           opacityPaletteGroups: Object.fromEntries(opacityPaletteGroups),
           componentCategoryGroups: Object.fromEntries(componentCategoryGroups),
-          semanticCategoryGroups: Object.fromEntries(semanticCategoryGroups)
+          semanticCategoryGroups: Object.fromEntries(semanticCategoryGroups),
+          // Store category groups by layer for easy lookup
+          layerCategoryGroups: Object.fromEntries(
+            Array.from(allLayerGroups.entries()).map(([layerName, groups]) => [
+              layerName,
+              Object.fromEntries(groups.categoryGroups)
+            ])
+          )
     };
   }, [tokenGraph]);
 
@@ -849,14 +984,17 @@ function App() {
             // Primitive palette groups
             children = organizedGraph.primitiveGroups[group.palette] || [];
             hasMatchingChild = children.some(child => nodeIds.has(child.id));
-          } else if (group.category && group.masterGroupId === 'master:components') {
+          } else if (group.category && group.layerGroupId === getLayerGroupId('component')) {
             // Component category groups
             children = organizedGraph.componentCategoryGroups[group.category] || [];
             hasMatchingChild = children.some(child => nodeIds.has(child.id));
-          } else if (group.category && group.masterGroupId === 'master:semantic') {
-            // Semantic category groups
-            children = organizedGraph.semanticCategoryGroups[group.category] || [];
-            hasMatchingChild = children.some(child => nodeIds.has(child.id));
+          } else if (group.category && group.layer) {
+            // Category groups for any layer (global, shared, semantic, etc.)
+            const layerGroups = organizedGraph.layerCategoryGroups?.[group.layer];
+            if (layerGroups) {
+              children = layerGroups[group.category] || [];
+              hasMatchingChild = children.some(child => nodeIds.has(child.id));
+            }
           }
           
           if (hasMatchingChild) {
@@ -867,38 +1005,61 @@ function App() {
         });
       }
       
-      // Include master groups if any of their children match
-      if (organizedGraph.columns.masterGroups) {
-        organizedGraph.columns.masterGroups.forEach(masterGroup => {
+      // Include layer groups if any of their children match
+      if (organizedGraph.columns.layerGroups) {
+        organizedGraph.columns.layerGroups.forEach(layerGroup => {
           let hasMatchingChild = false;
-          if (masterGroup.id === 'master:components') {
+          if (layerGroup.id === getLayerGroupId('component')) {
             hasMatchingChild = organizedGraph.columns.component.some(n => nodeIds.has(n.id));
-          } else if (masterGroup.id === 'master:semantic') {
-            hasMatchingChild = organizedGraph.columns.semantic.some(n => nodeIds.has(n.id));
-          } else if (masterGroup.id === 'master:primitives') {
+          } else if (layerGroup.id === getLayerGroupId('primitive')) {
             hasMatchingChild = organizedGraph.columns.groups?.some(g => nodeIds.has(g.id)) || 
                               organizedGraph.columns.primitive.some(n => nodeIds.has(n.id));
+          } else {
+            // Check if this layer group has matching children
+            const layerName = layerGroup.layer;
+            hasMatchingChild = (organizedGraph.columns[layerName] || []).some(n => nodeIds.has(n.id));
           }
           if (hasMatchingChild) {
-            nodeIds.add(masterGroup.id);
+            nodeIds.add(layerGroup.id);
           }
         });
       }
       
+      // Build filtered columns dynamically for all layers
       filtered.columns = {
-        component: filtered.columns.component.filter(n => nodeIds.has(n.id)),
-        semantic: filtered.columns.semantic.filter(n => nodeIds.has(n.id)),
-        primitive: filtered.columns.primitive.filter(n => nodeIds.has(n.id)),
+        component: filtered.columns.component ? filtered.columns.component.filter(n => nodeIds.has(n.id)) : [],
+        primitive: filtered.columns.primitive ? filtered.columns.primitive.filter(n => nodeIds.has(n.id)) : [],
         groups: filtered.columns.groups ? filtered.columns.groups.filter(n => nodeIds.has(n.id)) : [],
-        masterGroups: filtered.columns.masterGroups ? filtered.columns.masterGroups.filter(n => nodeIds.has(n.id)) : []
+        layerGroups: filtered.columns.layerGroups ? filtered.columns.layerGroups.filter(n => nodeIds.has(n.id)) : []
       };
+      
+      // Filter all other layers dynamically
+      Object.keys(filtered.columns).forEach(key => {
+        if (key !== 'groups' && key !== 'layerGroups' && key !== 'component' && key !== 'primitive') {
+          if (filtered.columns[key]) {
+            filtered.columns[key] = filtered.columns[key].filter(n => nodeIds.has(n.id));
+          }
+        }
+      });
+      
+      // Ensure all layers from organizedGraph are included
+      Object.keys(organizedGraph.columns).forEach(layerKey => {
+        if (layerKey !== 'groups' && layerKey !== 'layerGroups' && layerKey !== 'component' && layerKey !== 'primitive') {
+          if (!filtered.columns[layerKey]) {
+            filtered.columns[layerKey] = [];
+          }
+          if (organizedGraph.columns[layerKey]) {
+            filtered.columns[layerKey] = organizedGraph.columns[layerKey].filter(n => nodeIds.has(n.id));
+          }
+        }
+      });
       filtered.links = filtered.links.filter(link =>
         nodeIds.has(link.source) && nodeIds.has(link.target) &&
-        (link.mode === selectedMode || !link.mode || link.type === 'group-member' || link.type === 'master-group-member')
+        (link.mode === selectedMode || !link.mode || link.type === 'group-member' || link.type === 'layer-group-member' || link.type === 'reference')
       );
     } else {
       filtered.links = filtered.links.filter(link =>
-        link.mode === selectedMode || !link.mode || link.type === 'group-member' || link.type === 'master-group-member'
+        link.mode === selectedMode || !link.mode || link.type === 'group-member' || link.type === 'layer-group-member' || link.type === 'reference'
       );
     }
 
@@ -922,19 +1083,19 @@ function App() {
     return () => clearInterval(interval);
   }, [showMinimap, organizedGraph]);
 
-  // Zoom to fit master groups horizontally on initial load
+  // Zoom to fit layer groups horizontally on initial load
   useEffect(() => {
-    if (loading || !organizedGraph?.columns?.masterGroups || organizedGraph.columns.masterGroups.length === 0) {
+    if (loading || !organizedGraph?.columns?.layerGroups || organizedGraph.columns.layerGroups.length === 0) {
       return;
     }
 
     // Wait a bit for nodes to be positioned
     const timeoutId = setTimeout(() => {
-      const masterGroups = organizedGraph.columns.masterGroups;
-      if (!masterGroups || masterGroups.length === 0) return;
+      const layerGroups = organizedGraph.columns.layerGroups;
+      if (!layerGroups || layerGroups.length === 0) return;
 
-      // Calculate bounds of master groups
-      // Master groups are now centered on the canvas (25000, 25000)
+      // Calculate bounds of layer groups
+      // Layer groups are now centered on the canvas (25000, 25000)
       const SIDEBAR_WIDTH = sidebarCollapsed ? 0 : 280;
       const NODE_WIDTH = 450;
       const NODE_HEIGHT = 36;
@@ -944,8 +1105,8 @@ function App() {
       const CANVAS_CENTER_X = CANVAS_WIDTH / 2;
       const CANVAS_CENTER_Y = CANVAS_HEIGHT / 2;
       
-      const masterGroupsCount = masterGroups.length;
-      const totalWidth = (masterGroupsCount - 1) * MIN_SPACING + NODE_WIDTH;
+      const layerGroupsCount = layerGroups.length;
+      const totalWidth = (layerGroupsCount - 1) * MIN_SPACING + NODE_WIDTH;
       const startX = CANVAS_CENTER_X - totalWidth / 2;
       const endX = startX + totalWidth;
       const MASTER_Y = CANVAS_CENTER_Y - NODE_HEIGHT / 2;
@@ -969,17 +1130,17 @@ function App() {
       // Use the smaller zoom to fit both dimensions, but don't zoom too much (max 1.0, min 0.3)
       const targetZoom = Math.max(0.3, Math.min(1.0, Math.min(zoomX, zoomY)));
 
-      // Calculate pan to center the master groups horizontally, but position them near the top vertically
-      // Center of master groups in graph space
+      // Calculate pan to center the layer groups horizontally, but position them near the top vertically
+      // Center of layer groups in graph space
       const centerX = (startX + endX) / 2;
       // We want this center to appear at the center of the available viewport horizontally
       const viewportCenterX = SIDEBAR_WIDTH + availableWidth / 2;
       // After transform: centerX * zoom + panX = viewportCenterX
       const targetPanX = viewportCenterX - centerX * targetZoom;
       
-      // For Y, position master groups near the top of the viewport (with some top padding)
+      // For Y, position layer groups near the top of the viewport (with some top padding)
       const topPadding = 80; // Padding from top of viewport
-      // Position so master groups appear near the top, accounting for zoom
+      // Position so layer groups appear near the top, accounting for zoom
       const targetPanY = topPadding - masterTop * targetZoom;
 
       // Apply zoom and pan
@@ -1044,11 +1205,11 @@ function App() {
   }, []);
 
   const handleZoomToFit = useCallback(() => {
-    if (!organizedGraph?.columns?.masterGroups || organizedGraph.columns.masterGroups.length === 0) {
+    if (!organizedGraph?.columns?.layerGroups || organizedGraph.columns.layerGroups.length === 0) {
       return;
     }
 
-    const masterGroups = organizedGraph.columns.masterGroups;
+    const layerGroups = organizedGraph.columns.layerGroups;
     const SIDEBAR_WIDTH = sidebarCollapsed ? 0 : 280;
     const NODE_WIDTH = 450;
     const NODE_HEIGHT = 36;
@@ -1058,8 +1219,8 @@ function App() {
     const CANVAS_CENTER_X = CANVAS_WIDTH / 2;
     const CANVAS_CENTER_Y = CANVAS_HEIGHT / 2;
     
-    const masterGroupsCount = masterGroups.length;
-    const totalWidth = (masterGroupsCount - 1) * MIN_SPACING + NODE_WIDTH;
+    const layerGroupsCount = layerGroups.length;
+    const totalWidth = (layerGroupsCount - 1) * MIN_SPACING + NODE_WIDTH;
     const startX = CANVAS_CENTER_X - totalWidth / 2;
     const endX = startX + totalWidth;
     const MASTER_Y = CANVAS_CENTER_Y - NODE_HEIGHT / 2;
@@ -1083,7 +1244,7 @@ function App() {
     const viewportCenterX = SIDEBAR_WIDTH + availableWidth / 2;
     const targetPanX = viewportCenterX - centerX * targetZoom;
     
-    // Position master groups near the top of the viewport
+    // Position layer groups near the top of the viewport
     const topPadding = 80;
     const targetPanY = topPadding - masterTop * targetZoom;
 
@@ -1114,15 +1275,9 @@ function App() {
       setCurrentFileName(fileName);
       
       // Update available modes from imported data (themes = modes)
-      if (importedModes && importedModes.length > 0) {
-        setAvailableModes(importedModes);
-        // Set first mode as default
-        setSelectedMode(importedModes[0]);
-      } else {
-        // Fallback to default modes if none detected
-        setAvailableModes(MODES);
-        setSelectedMode('default');
-      }
+      const modes = importedModes || [];
+      setAvailableModes(modes);
+      setSelectedMode(modes.length > 0 ? modes[0] : null);
       
       // Reset view when importing new file
       setPanX(380);
@@ -1146,15 +1301,9 @@ function App() {
       setCurrentFileName(fileName);
       
       // Update available modes from imported data (themes = modes)
-      if (importedModes && importedModes.length > 0) {
-        setAvailableModes(importedModes);
-        // Set first mode as default
-        setSelectedMode(importedModes[0]);
-      } else {
-        // Fallback to default modes if none detected
-        setAvailableModes(MODES);
-        setSelectedMode('default');
-      }
+      const modes = importedModes || [];
+      setAvailableModes(modes);
+      setSelectedMode(modes.length > 0 ? modes[0] : null);
       
       // Reset view when importing new file
       setPanX(380);
@@ -1174,9 +1323,10 @@ function App() {
     if (originalTeardropGraph) {
       setTokenGraph(originalTeardropGraph);
       setCurrentFileName(null);
-      // Reset to default Teardrop modes
-      setAvailableModes(MODES);
-      setSelectedMode('default');
+      // Reset to original graph modes
+      const modes = originalTeardropGraph.availableModes || [];
+      setAvailableModes(modes);
+      setSelectedMode(modes.length > 0 ? modes[0] : null);
       // Reset view
       setPanX(380);
       setPanY(130);
@@ -1273,3 +1423,4 @@ function App() {
 }
 
 export default App;
+

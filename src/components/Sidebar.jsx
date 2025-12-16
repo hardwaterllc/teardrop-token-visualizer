@@ -26,9 +26,10 @@ function Sidebar({
       <section className="sidebar-top">
         <div className="branding">
           <div className="logo"></div>
-            <h1>Token Visualizer</h1>
+            <h1>Mana Token Visualizer</h1>
         </div>
-
+        </section>
+<section className="sidebar-search">
         <div className="search-container">
           <input
             type="text"
@@ -38,29 +39,35 @@ function Sidebar({
             onChange={(e) => onSearchChange(e.target.value)}
           />
         </div>
-
+        </section>
+        <section className="sidebar-middle">
         <div className="filters-section">
           <div className="filter-group">
             <label className="filter-label">Mode</label>
             <div className="radio-group">
-              {modes.map(mode => (
-                <label key={mode} className="radio-option">
-                  <input
-                    type="radio"
-                    name="mode"
-                    value={mode}
-                    checked={selectedMode === mode}
-                    onChange={(e) => onModeChange(e.target.value)}
-                  />
-                  <span>{getModeDisplayName(mode)}</span>
-                </label>
-              ))}
+              {modes.length > 0 ? (
+                modes.map(mode => (
+                  <label key={mode} className="radio-option">
+                    <input
+                      type="radio"
+                      name="mode"
+                      value={mode}
+                      checked={selectedMode === mode}
+                      onChange={(e) => onModeChange(e.target.value)}
+                    />
+                    <span>{getModeDisplayName(mode)}</span>
+                  </label>
+                ))
+              ) : (
+                <div style={{ padding: '8px 12px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                  No Modes Available
+                </div>
+              )}
             </div>
           </div>
         </div>
       </section>
-
-      <section className="sidebar-middle">
+      <section className="sidebar-bottom">
         <div className="keyboard-shortcuts">
           <h3>Keyboard Shortcuts</h3>
           <ul>

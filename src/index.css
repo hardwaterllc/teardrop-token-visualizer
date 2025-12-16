@@ -19,9 +19,7 @@
                                                                                                                          **####=              
                                                                                                                          -=----.              */
 /* Import Teardrop Design Tokens */
-@import '../../../generated/css/tokens.css';
-/* Import Brand Styles */
-@import './brand.css';
+@import './utils/tokens.css';
 
 * {
   margin: 0;

@@ -149,7 +149,7 @@
   background: var(--neutral-7) !important;
 }
 
-.token-node.master-group {
+.token-node.layer-group {
   font-weight: 700;
   font-size: 15px;
   border: 1px solid var(--purple-5);
@@ -160,7 +160,7 @@
   box-shadow: 0 2px 4px rgba(114, 70, 255, 0.3);
 }
 
-.token-node.master-group:hover {
+.token-node.layer-group:hover {
   border-color: var(--purple-4);
   box-shadow: 0 4px 8px rgba(114, 70, 255, 0.4), 0 0 0 1px var(--purple-4);
   background: linear-gradient(135deg, rgba(114, 70, 255, 0.25) 0%, rgba(114, 70, 255, 0.3) 100%) !important;

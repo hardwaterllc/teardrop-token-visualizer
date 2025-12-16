@@ -22,7 +22,9 @@ function TokenConnection({ connection, isHighlighted, style, strokeColor }) {
     path = `M ${sourceX} ${sourceY} L ${targetX} ${targetY}`;
   } else if (connection.midX !== undefined && isValidNumber(connection.midX)) {
     // L-shaped path for stacked consuming tokens (horizontal then vertical)
-    path = `M ${sourceX} ${sourceY} L ${connection.midX} ${sourceY} L ${connection.midX} ${targetY} L ${targetX} ${targetY}`;
+    // Use midY if provided to keep horizontal segment at source Y, otherwise use sourceY
+    const horizontalY = (connection.midY !== undefined && isValidNumber(connection.midY)) ? connection.midY : sourceY;
+    path = `M ${sourceX} ${sourceY} L ${connection.midX} ${horizontalY} L ${connection.midX} ${targetY} L ${targetX} ${targetY}`;
   } else {
     // Curved path for normal connections
     const midX = (sourceX + targetX) / 2;

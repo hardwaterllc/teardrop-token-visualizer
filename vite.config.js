@@ -7,7 +7,7 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      '@tokens': path.resolve(__dirname, '../../generated/js/tokens.json')
+      '@tokens': path.resolve(__dirname, 'src/lib/mana/tokens.json')
     }
   },
   server: {
