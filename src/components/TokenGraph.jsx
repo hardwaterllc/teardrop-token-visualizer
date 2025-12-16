@@ -2649,19 +2649,6 @@ const TokenGraph = forwardRef(function TokenGraph({
       // Calculate total width needed for horizontal layout
       const totalWidth = totalHorizontalNodes > 1 ? (totalHorizontalNodes - 1) * evenSpacing + NODE_WIDTH : NODE_WIDTH;
       
-      // Debug: log layout info
-      console.log('[FocusMode] Layout calculation:', {
-        tokenId,
-        referencedCount,
-        consumingCount,
-        totalHorizontalNodes,
-        totalWidth,
-        evenSpacing,
-        selectedNodeGraphX,
-        selectedNodeGraphY,
-        viewportWidth,
-        viewportHeight
-      });
       
       // Calculate total height needed for consuming tokens (stacked vertically)
       // Use 64px spacing as requested
@@ -2684,16 +2671,6 @@ const TokenGraph = forwardRef(function TokenGraph({
       // Start X position: center minus half the total width
       const startX = layoutCenterX - totalWidth / 2;
       
-      // Debug: log coordinate conversion
-      console.log('[FocusMode] Layout calculation (centered on token):', {
-        tokenGraphPos: { x: selectedNodeGraphX, y: selectedNodeGraphY },
-        layoutCenter: { x: layoutCenterX, y: selectedTokenCenterY },
-        startX,
-        selectedTokenCenterY,
-        totalWidth,
-        totalHeight: maxConsumingHeight,
-        evenSpacing
-      });
       
       // Validate calculated positions are valid
       if (isNaN(startX) || !isFinite(startX) || isNaN(selectedTokenCenterY) || !isFinite(selectedTokenCenterY)) {
@@ -2756,23 +2733,6 @@ const TokenGraph = forwardRef(function TokenGraph({
       // Solving: consumingStartY = selectedTokenCenterY - (totalConsumingHeight / 2)
       const consumingStartY = selectedTokenCenterY - (totalConsumingHeight / 2);
       
-      // Debug: log consuming token positioning
-      console.log('[FocusMode] Consuming tokens positioning:', {
-        consumingCount,
-        startX,
-        referencedCount,
-        evenSpacing,
-        calculatedConsumingStartX: startX + (referencedCount + 1) * evenSpacing,
-        consumingStartX,
-        consumingStartY,
-        totalConsumingHeight,
-        consumingSpacing,
-        selectedTokenCenterY,
-        selectedNodeY: selectedNodeY,
-        horizontalNodeY: horizontalNodeY,
-        firstTokenCenterY: consumingStartY + NODE_HEIGHT / 2,
-        stackCenterY: consumingStartY + (totalConsumingHeight / 2)
-      });
       
       consumingTokens.forEach((node, index) => {
         const focusX = consumingStartX;
@@ -2782,7 +2742,6 @@ const TokenGraph = forwardRef(function TokenGraph({
           console.warn('Invalid position for consuming node:', { nodeId: node.id, focusX, focusY });
           return;
         }
-        console.log(`[FocusMode] Consuming token ${index}: ${node.id} at (${focusX}, ${focusY})`);
         linearPositions.push({
           id: node.id,
           focusX,
@@ -2806,19 +2765,6 @@ const TokenGraph = forwardRef(function TokenGraph({
       const minY = Math.min(...validPositions.map(p => p.focusY));
       const maxY = Math.max(...validPositions.map(p => p.focusY)) + NODE_HEIGHT;
       
-      // Debug: log bounding box
-      console.log('[FocusMode] Bounding box:', {
-        minX, maxX, minY, maxY,
-        width: maxX - minX,
-        height: maxY - minY,
-        totalPositions: validPositions.length,
-        consumingTokens: consumingTokens.length,
-        consumingTokenPositions: validPositions.filter(p => consumingTokens.some(ct => ct.id === p.id)).map(p => ({
-          id: p.id,
-          x: p.focusX,
-          y: p.focusY
-        }))
-      });
       
       // Validate bounding box
       if (isNaN(minX) || isNaN(maxX) || isNaN(minY) || isNaN(maxY) || 
@@ -2849,29 +2795,11 @@ const TokenGraph = forwardRef(function TokenGraph({
       
       const calculatedZoom = Math.max(0.1, Math.min(validZoomX, validZoomY, 1.2)); // Cap at 120%, minimum 0.1
       
-      // Debug: log zoom calculation
-      console.log('[FocusMode] Zoom calculation:', {
-        chainWidth,
-        chainHeight,
-        paddedWidth,
-        paddedHeight,
-        availableWidth,
-        availableHeight,
-        zoomX,
-        zoomY,
-        calculatedZoom
-      });
       
       // Calculate center of chain in graph coordinates
       const chainCenterX = (minX + maxX) / 2;
       const chainCenterY = (minY + maxY) / 2;
       
-      // Debug: log chain center
-      console.log('[FocusMode] Chain center:', {
-        chainCenterX,
-        chainCenterY,
-        minX, maxX, minY, maxY
-      });
       
       // Build full chain array for focus mode
       const fullChain = [
@@ -2985,16 +2913,6 @@ const TokenGraph = forwardRef(function TokenGraph({
       const panDeltaX = targetPanX - panAfterZoomX;
       const panDeltaY = targetPanY - panAfterZoomY;
       
-      // Debug: log pan calculation
-      console.log('[FocusMode] Pan calculation:', {
-        currentPan: { x: panX, y: panY },
-        targetScreenCenter: { x: targetScreenCenterX, y: targetScreenCenterY },
-        targetPan: { x: targetPanX, y: targetPanY },
-        panAfterZoom: { x: panAfterZoomX, y: panAfterZoomY },
-        panDelta: { x: panDeltaX, y: panDeltaY },
-        zoomRatio,
-        zoomPoint: { x: zoomPointX, y: zoomPointY }
-      });
       
       // Apply zoom - onZoom will handle pan adjustment internally
       onZoom(calculatedZoom - zoom, zoomPointX, zoomPointY);
@@ -3293,7 +3211,6 @@ const TokenGraph = forwardRef(function TokenGraph({
         // For reference links, we want to show connections even if nodes are hidden
         // But we still need the nodes to be in the positioned map
         if (!sourceNode || !targetNode) {
-          // Debug: count missing nodes for reference links
           if (link.type === 'reference') {
             if (!sourceNode) {
               missingSourceCount++;

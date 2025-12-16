@@ -405,7 +405,6 @@ function convertStyleDictionaryToGraph(sdData) {
 
   flattenTokens(sdData);
 
-  // Debug: Log layer distribution
   const layersCount = new Map();
           nodes.forEach(node => {
             const layer = node.layer || 'unknown';
@@ -635,10 +634,7 @@ function convertStyleDictionaryToGraph(sdData) {
     });
   });
   
-  console.log(`[fileParser] Total reference links created: ${links.length}`);
-  if (links.length > 0) {
-    console.log(`[fileParser] Sample reference links:`, links.slice(0, 10).map(l => `${l.source} -> ${l.target} (${l.mode})`));
-  } else {
+  if (links.length === 0) {
     console.warn(`[fileParser] No reference links created! Check if references are being collected correctly.`);
   }
 
