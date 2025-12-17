@@ -13,6 +13,8 @@ function App() {
   const [tokenGraph, setTokenGraph] = useState({ nodes: [], links: [] });
   const [originalTeardropGraph, setOriginalTeardropGraph] = useState(null);
   const [availableModes, setAvailableModes] = useState([]);
+  const [version, setVersion] = useState(null);
+  const [allVersions, setAllVersions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedTokens, setSelectedTokens] = useState([]);
   const [panX, setPanX] = useState(380);
@@ -43,16 +45,30 @@ function App() {
       try {
         // Try to parse the imported tokens.json first
         if (tokensData) {
-          const parsed = parseJSONFile(tokensData);
-          if (parsed.nodes && parsed.nodes.length > 0) {
-            setTokenGraph(parsed);
-            setOriginalTeardropGraph(parsed);
-            // Use modes from parsed data only
-            const modes = parsed.availableModes || [];
-            setAvailableModes(modes);
-            setSelectedMode(modes.length > 0 ? modes[0] : null);
-            setLoading(false);
-            return;
+          try {
+            const parsed = parseJSONFile(tokensData);
+            if (parsed && parsed.nodes && parsed.nodes.length > 0) {
+              // Ensure parsed data has all required properties
+              const graphData = {
+                nodes: parsed.nodes || [],
+                links: parsed.links || [],
+                availableModes: parsed.availableModes || [],
+                version: parsed.version || null,
+                allVersions: parsed.allVersions || []
+              };
+              setTokenGraph(graphData);
+              setOriginalTeardropGraph(graphData);
+              setVersion(graphData.version);
+              setAllVersions(graphData.allVersions || []);
+              // Use modes from parsed data only
+              const modes = graphData.availableModes || [];
+              setAvailableModes(modes);
+              setSelectedMode(modes.length > 0 ? modes[0] : null);
+              setLoading(false);
+              return;
+            }
+          } catch (parseError) {
+            console.warn('Failed to parse tokens.json:', parseError);
           }
         }
       } catch (err) {
@@ -71,15 +87,40 @@ function App() {
           return { nodes: [], links: [] };
         })
         .then(data => {
-          if (data.nodes && data.nodes.length > 0) {
-            setTokenGraph(data);
-            setOriginalTeardropGraph(data);
-            const modes = data.availableModes || [];
-            setAvailableModes(modes);
-            setSelectedMode(modes.length > 0 ? modes[0] : null);
+          if (data && data.nodes && data.nodes.length > 0) {
+            // Parse the fetched data to ensure proper structure
+            try {
+              const parsed = parseJSONFile(data);
+              const graphData = {
+                nodes: parsed.nodes || [],
+                links: parsed.links || [],
+                availableModes: parsed.availableModes || data.availableModes || [],
+                version: parsed.version || data.version || null,
+                allVersions: parsed.allVersions || data.allVersions || []
+              };
+              setTokenGraph(graphData);
+              setOriginalTeardropGraph(graphData);
+              setVersion(graphData.version);
+              setAllVersions(graphData.allVersions || []);
+              const modes = graphData.availableModes || [];
+              setAvailableModes(modes);
+              setSelectedMode(modes.length > 0 ? modes[0] : null);
+            } catch (parseError) {
+              console.warn('Failed to parse fetched token-graph.json:', parseError);
+              // Fallback to raw data if parsing fails
+              setTokenGraph({
+                nodes: data.nodes || [],
+                links: data.links || [],
+                availableModes: data.availableModes || [],
+                version: data.version || null
+              });
+              setVersion(data.version || null);
+            }
           } else {
             // No default graph, user needs to upload
             setTokenGraph({ nodes: [], links: [] });
+            setVersion(null);
+            setAllVersions([]);
             setAvailableModes([]);
             setSelectedMode(null);
           }
@@ -90,6 +131,8 @@ function App() {
             console.log('No default token graph found. Please upload a JSON file.');
           }
           setTokenGraph({ nodes: [], links: [] });
+          setVersion(null);
+          setAllVersions([]);
           setAvailableModes([]);
           setSelectedMode(null);
           setLoading(false);
@@ -244,6 +287,66 @@ function App() {
           childCount: nodes.length
         };
         layerGroups.push(layerGroup);
+      }
+    });
+
+    // Create version nodes for all unique versions
+    const versionNodes = [];
+    const versionLinks = [];
+    
+    // Get all unique versions from tokens (group layer groups by version)
+    const versionsFromTokens = new Set();
+    tokenGraph.nodes.forEach(node => {
+      if (node.version && typeof node.version === 'string') {
+        versionsFromTokens.add(node.version);
+      }
+    });
+    
+    // Use allVersions from graph if available, otherwise use versions from tokens
+    const uniqueVersions = allVersions.length > 0 
+      ? allVersions 
+      : (version ? [version] : Array.from(versionsFromTokens).sort());
+    
+    // Group layer groups by version (assign each layer group to the version most of its tokens have)
+    const layerGroupVersions = new Map();
+    layerGroups.forEach(layerGroup => {
+      const layerNodes = nodesByLayer.get(layerGroup.layer) || [];
+      const versionCounts = new Map();
+      
+      layerNodes.forEach(node => {
+        if (node.version && typeof node.version === 'string') {
+          versionCounts.set(node.version, (versionCounts.get(node.version) || 0) + 1);
+        }
+      });
+      
+      // Assign layer group to the version most of its tokens have
+      if (versionCounts.size > 0) {
+        const sortedVersions = Array.from(versionCounts.entries())
+          .sort((a, b) => b[1] - a[1]);
+        layerGroupVersions.set(layerGroup.id, sortedVersions[0][0]);
+      } else if (version) {
+        // Fallback to primary version if no tokens have version
+        layerGroupVersions.set(layerGroup.id, version);
+      }
+    });
+    
+    // Create version nodes
+    uniqueVersions.forEach(v => {
+      const versionLayerGroups = layerGroups.filter(lg => 
+        layerGroupVersions.get(lg.id) === v
+      );
+      
+      if (versionLayerGroups.length > 0 || uniqueVersions.length === 1) {
+        const versionNode = {
+          id: `version:${v}`,
+          name: v,
+          type: 'version',
+          isVersion: true,
+          version: v,
+          childCount: versionLayerGroups.length,
+          layerGroupIds: versionLayerGroups.map(lg => lg.id)
+        };
+        versionNodes.push(versionNode);
       }
     });
 
@@ -935,7 +1038,8 @@ function App() {
     // Create dynamic columns object with all layers
     const columns = {
       groups: allCategoryGroups,
-      layerGroups: layerGroups
+      layerGroups: layerGroups,
+      versionNodes: versionNodes
     };
     
     // Add nodes for each layer dynamically
@@ -943,10 +1047,13 @@ function App() {
       columns[layer] = nodes;
     });
 
+    // Combine all nodes including version nodes
+    const allNodes = [...tokenGraph.nodes, ...layerGroups, ...allCategoryGroups, ...versionNodes];
+
     return {
       columns: columns,
-      links: [...tokenGraph.links, ...layerLinks, ...categoryLinks, ...paletteLinks],
-      allNodes: [...tokenGraph.nodes, ...layerGroups, ...allCategoryGroups],
+      links: [...tokenGraph.links, ...layerLinks, ...categoryLinks, ...paletteLinks, ...versionLinks],
+      allNodes: allNodes,
           primitiveGroups: Object.fromEntries(primitiveGroups),
           opacityPaletteGroups: Object.fromEntries(opacityPaletteGroups),
           componentCategoryGroups: Object.fromEntries(componentCategoryGroups),
@@ -959,7 +1066,7 @@ function App() {
             ])
           )
     };
-  }, [tokenGraph]);
+  }, [tokenGraph, version, allVersions]);
 
   // Filter graph based on search and mode
   const filteredGraph = useMemo(() => {
@@ -1025,12 +1132,23 @@ function App() {
         });
       }
       
+      // Include version nodes if any of their layer groups match
+      if (organizedGraph.columns.versionNodes) {
+        organizedGraph.columns.versionNodes.forEach(versionNode => {
+          const hasMatchingLayerGroup = versionNode.layerGroupIds?.some(lgId => nodeIds.has(lgId));
+          if (hasMatchingLayerGroup) {
+            nodeIds.add(versionNode.id);
+          }
+        });
+      }
+      
       // Build filtered columns dynamically for all layers
       filtered.columns = {
         component: filtered.columns.component ? filtered.columns.component.filter(n => nodeIds.has(n.id)) : [],
         primitive: filtered.columns.primitive ? filtered.columns.primitive.filter(n => nodeIds.has(n.id)) : [],
         groups: filtered.columns.groups ? filtered.columns.groups.filter(n => nodeIds.has(n.id)) : [],
-        layerGroups: filtered.columns.layerGroups ? filtered.columns.layerGroups.filter(n => nodeIds.has(n.id)) : []
+        layerGroups: filtered.columns.layerGroups ? filtered.columns.layerGroups.filter(n => nodeIds.has(n.id)) : [],
+        versionNodes: filtered.columns.versionNodes ? filtered.columns.versionNodes.filter(n => nodeIds.has(n.id)) : []
       };
       
       // Filter all other layers dynamically
@@ -1270,12 +1388,25 @@ function App() {
   const handleImportJSON = useCallback(async (file) => {
     try {
       setLoading(true);
-      const { graph, fileName, availableModes: importedModes } = await parseFile(file);
-      setTokenGraph(graph);
+      const result = await parseFile(file);
+      const { graph, fileName, availableModes: importedModes, version: importedVersion, allVersions: importedAllVersions } = result;
+      
+      // Ensure graph has the required structure
+      const graphData = {
+        nodes: graph.nodes || [],
+        links: graph.links || [],
+        availableModes: graph.availableModes || importedModes || [],
+        version: graph.version || importedVersion || null,
+        allVersions: graph.allVersions || importedAllVersions || []
+      };
+      
+      setTokenGraph(graphData);
+      setVersion(graphData.version);
+      setAllVersions(graphData.allVersions || []);
       setCurrentFileName(fileName);
       
       // Update available modes from imported data (themes = modes)
-      const modes = importedModes || [];
+      const modes = graphData.availableModes || [];
       setAvailableModes(modes);
       setSelectedMode(modes.length > 0 ? modes[0] : null);
       
@@ -1322,6 +1453,8 @@ function App() {
   const handleReturnToTeardrop = useCallback(() => {
     if (originalTeardropGraph) {
       setTokenGraph(originalTeardropGraph);
+      setVersion(originalTeardropGraph.version || null);
+      setAllVersions(originalTeardropGraph.allVersions || []);
       setCurrentFileName(null);
       // Reset to original graph modes
       const modes = originalTeardropGraph.availableModes || [];

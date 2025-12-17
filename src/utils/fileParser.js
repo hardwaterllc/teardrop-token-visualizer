@@ -9,20 +9,41 @@
  */
 export function parseJSONFile(jsonData) {
   try {
+    // Validate input
+    if (!jsonData || typeof jsonData !== 'object') {
+      throw new Error('Invalid JSON data: expected an object');
+    }
+
+    // Extract version property if it exists at the root level
+    let version = null;
+    if (jsonData.version) {
+      if (typeof jsonData.version === 'string') {
+        version = jsonData.version;
+      } else if (typeof jsonData.version === 'object' && jsonData.version.value) {
+        // Handle version as an object with a value property
+        version = String(jsonData.version.value);
+      }
+    }
+
     // If it's already in graph format
     if (jsonData.nodes && jsonData.links) {
       return {
-        nodes: jsonData.nodes,
-        links: jsonData.links,
-        availableModes: jsonData.availableModes || extractModesFromGraph(jsonData)
+        nodes: Array.isArray(jsonData.nodes) ? jsonData.nodes : [],
+        links: Array.isArray(jsonData.links) ? jsonData.links : [],
+        availableModes: jsonData.availableModes || extractModesFromGraph(jsonData),
+        version: version || jsonData.version || null,
+        allVersions: jsonData.allVersions || (version ? [version] : [])
       };
     }
 
     // Style Dictionary format (nested structure with layer properties)
     const graph = convertStyleDictionaryToGraph(jsonData);
     return {
-      ...graph,
-      availableModes: extractModesFromGraph(graph)
+      nodes: graph.nodes || [],
+      links: graph.links || [],
+      availableModes: graph.availableModes || extractModesFromGraph(graph),
+      version: version || graph.version || null,
+      allVersions: graph.allVersions || (version ? [version] : [])
     };
   } catch (error) {
     throw new Error(`Failed to parse JSON: ${error.message}`);
@@ -106,9 +127,133 @@ function convertStyleDictionaryToGraph(sdData) {
       const value = obj[key];
 
       if (value && typeof value === 'object') {
+        // Check if this object has type/layer but no value, and all children have value+mode (modes structure)
+        // Structure: { type: "...", layer: "...", mobile-light: { value: "...", mode: "mobile-light" }, ... }
+        const hasTypeOrLayer = ('type' in value || 'layer' in value);
+        const hasNoValue = !('value' in value);
+        const childKeys = Object.keys(value).filter(k => 
+          k !== 'type' && k !== 'layer' && k !== 'description' && k !== 'version' && k !== 'reference'
+        );
+        const allChildrenAreModes = childKeys.length > 0 && childKeys.every(key => {
+          const child = value[key];
+          return child && typeof child === 'object' && 'value' in child && 'mode' in child;
+        });
+        
+        if (hasTypeOrLayer && hasNoValue && allChildrenAreModes) {
+          const tokenPath = currentPath.join('.');
+          const layer = value.layer || parentLayer;
+          
+          if (!layer) {
+            console.warn(`Token ${tokenPath} has no layer property and no parent layer. Skipping.`);
+            return;
+          }
+          
+          // Collect modes from children
+          const modes = {};
+          let tokenType = value.type || 'color';
+          let description = value.description || '';
+          let defaultValue = null;
+          
+          childKeys.forEach(key => {
+            const modeData = value[key];
+            if (modeData && typeof modeData === 'object' && 'value' in modeData && 'mode' in modeData) {
+              const modeName = modeData.mode;
+              const modeValue = modeData.reference || modeData.value;
+              modes[modeName] = modeValue;
+              allModes.add(modeName);
+              // Use first mode as default, or prefer 'default' mode if it exists
+              if (!defaultValue || modeName === 'default') {
+                defaultValue = modeValue;
+              }
+            }
+          });
+          
+          const token = {
+            id: tokenPath,
+            name: tokenPath,
+            type: tokenType,
+            layer: layer,
+            value: defaultValue,
+            description: description,
+            modes: modes
+          };
+          
+          // Preserve version property if it exists
+          if (value.version && typeof value.version === 'string') {
+            token.version = value.version;
+          }
+          
+          // Extract color if it's a hex or rgba value
+          if (defaultValue && typeof defaultValue === 'string') {
+            if (defaultValue.startsWith('#') || defaultValue.startsWith('rgba(') || defaultValue.startsWith('rgb(')) {
+              token.color = defaultValue;
+            }
+          }
+          
+          tokenMap.set(tokenPath, token);
+          nodes.push(token);
+          return; // Don't recurse into this object - we've processed it as a token
+        }
+        // NEW: Check if this object has a "value" property - if so, it's a token and sibling objects are modes
+        // Structure: { value: "...", type: "...", layer: "...", dark: { value: "...", mode: "dark" }, ... }
+        else if ('value' in value && typeof value.value !== 'object') {
+          const tokenPath = currentPath.join('.');
+          const layer = value.layer || parentLayer;
+          
+          if (!layer) {
+            console.warn(`Token ${tokenPath} has no layer property and no parent layer. Skipping.`);
+            return;
+          }
+          
+          // Collect modes from sibling objects that have 'value' and 'mode' properties
+          const modes = {};
+          let tokenType = value.type || 'color';
+          let description = value.description || '';
+          let defaultValue = value.value;
+          
+          // Check all keys in the value object for mode variations
+          Object.keys(value).forEach(key => {
+            if (key !== 'value' && key !== 'type' && key !== 'layer' && key !== 'description' && key !== 'version' && key !== 'reference') {
+              const sibling = value[key];
+              // If it's an object with 'value' and 'mode' properties, it's a mode variation
+              if (sibling && typeof sibling === 'object' && 'value' in sibling && 'mode' in sibling) {
+                const modeName = sibling.mode;
+                const modeValue = sibling.reference || sibling.value;
+                modes[modeName] = modeValue;
+                allModes.add(modeName);
+              }
+            }
+          });
+          
+          const token = {
+            id: tokenPath,
+            name: tokenPath,
+            type: tokenType,
+            layer: layer,
+            value: defaultValue,
+            description: description,
+            modes: Object.keys(modes).length > 0 ? modes : undefined
+          };
+          
+          // Preserve version property if it exists
+          if (value.version && typeof value.version === 'string') {
+            token.version = value.version;
+          }
+          
+          // Extract color if it's a hex or rgba value
+          if (defaultValue && typeof defaultValue === 'string') {
+            if (defaultValue.startsWith('#') || defaultValue.startsWith('rgba(') || defaultValue.startsWith('rgb(')) {
+              token.color = defaultValue;
+            }
+          }
+          
+          tokenMap.set(tokenPath, token);
+          nodes.push(token);
+          return; // Don't recurse into this object - we've processed it as a token
+        }
         // Check if this object has a "modes" property (new structure: { modes: {...}, layer: "...", type: "..." })
         // This structure has modes as a sibling of layer/type/description
-        if (value.modes && typeof value.modes === 'object' && ('layer' in value || 'type' in value)) {
+        else if (value.modes && typeof value.modes === 'object' && ('layer' in value || 'type' in value)) {
           const tokenPath = currentPath.join('.');
           // Layer is at the same level as modes
           const layer = value.layer || parentLayer;
@@ -149,6 +294,11 @@ function convertStyleDictionaryToGraph(sdData) {
             description: description,
             modes: modes
           };
+
+          // Preserve version property if it exists
+          if (value.version && typeof value.version === 'string') {
+            token.version = value.version;
+          }
 
           // Extract color if it's a hex or rgba value
           if (defaultValue && typeof defaultValue === 'string') {
@@ -204,6 +354,11 @@ function convertStyleDictionaryToGraph(sdData) {
             modes: modes
           };
 
+          // Preserve version property if it exists
+          if (value.version && typeof value.version === 'string') {
+            token.version = value.version;
+          }
+
           // Extract color if it's a hex or rgba value
           if (defaultValue && typeof defaultValue === 'string') {
             if (defaultValue.startsWith('#') || defaultValue.startsWith('rgba(') || defaultValue.startsWith('rgb(')) {
@@ -233,6 +388,11 @@ function convertStyleDictionaryToGraph(sdData) {
             value: value.value,
             description: value.description || ''
           };
+
+          // Preserve version property if it exists
+          if (value.version && typeof value.version === 'string') {
+            token.version = value.version;
+          }
 
           // Extract color if it's a hex or rgba value
           if (typeof value.value === 'string' && (value.value.startsWith('#') || value.value.startsWith('rgba(') || value.value.startsWith('rgb('))) {
@@ -296,6 +456,14 @@ function convertStyleDictionaryToGraph(sdData) {
             modes: modes
           };
 
+          // Preserve version property if it exists (check first mode entry)
+          // firstModeKey and firstModeData are already declared above
+          if (firstModeData && firstModeData.version && typeof firstModeData.version === 'string') {
+            token.version = firstModeData.version;
+          } else if (value.version && typeof value.version === 'string') {
+            token.version = value.version;
+          }
+
           // Extract color if it's a hex or rgba value
           if (defaultColor && typeof defaultColor === 'string' && (defaultColor.startsWith('#') || defaultColor.startsWith('rgba(') || defaultColor.startsWith('rgb('))) {
             token.color = defaultColor;
@@ -351,6 +519,11 @@ function convertStyleDictionaryToGraph(sdData) {
               modes: modes
             };
 
+            // Preserve version property if it exists
+            if (value.version && typeof value.version === 'string') {
+              token.version = value.version;
+            }
+
             if (typeof value.value === 'string' && value.value.startsWith('#')) {
               token.color = value.value;
             }
@@ -376,6 +549,11 @@ function convertStyleDictionaryToGraph(sdData) {
               value: value.value,
               description: value.description || ''
             };
+
+            // Preserve version property if it exists
+            if (value.version && typeof value.version === 'string') {
+              token.version = value.version;
+            }
 
             if (value.mode) {
               token.modes = { [value.mode]: value.value };
@@ -403,7 +581,42 @@ function convertStyleDictionaryToGraph(sdData) {
     });
   }
 
+  // Extract version property if it exists at the root level (before processing)
+  let version = null;
+  if (sdData && typeof sdData === 'object' && sdData.version && typeof sdData.version === 'string') {
+    version = sdData.version;
+  }
+
   flattenTokens(sdData);
+
+  // Collect all unique versions from tokens (for multi-version support)
+  const allVersions = new Set();
+  if (version) {
+    allVersions.add(version);
+  }
+  nodes.forEach(node => {
+    // Check if node has a version property
+    if (node.version && typeof node.version === 'string') {
+      allVersions.add(node.version);
+    }
+  });
+  
+  // If no root-level version but we found versions in tokens, use the most common one as primary
+  if (!version && allVersions.size > 0) {
+    const versionCounts = new Map();
+    nodes.forEach(node => {
+      if (node.version && typeof node.version === 'string') {
+        const v = node.version;
+        versionCounts.set(v, (versionCounts.get(v) || 0) + 1);
+      }
+    });
+    
+    if (versionCounts.size > 0) {
+      const sortedVersions = Array.from(versionCounts.entries())
+        .sort((a, b) => b[1] - a[1]); // Sort by count (descending)
+      version = sortedVersions[0][0]; // Use the most common version as primary
+    }
+  }
 
   const layersCount = new Map();
           nodes.forEach(node => {
@@ -638,11 +851,13 @@ function convertStyleDictionaryToGraph(sdData) {
     console.warn(`[fileParser] No reference links created! Check if references are being collected correctly.`);
   }
 
-  // Return nodes, links, and available modes extracted from mode fields
+  // Return nodes, links, available modes, version, and all versions
   return { 
     nodes, 
     links,
-    availableModes: Array.from(allModes).sort()
+    availableModes: Array.from(allModes).sort(),
+    version: version, // Primary version (root-level or most common)
+    allVersions: Array.from(allVersions).sort() // All unique versions found
   };
 }
 
@@ -661,10 +876,20 @@ export function parseFile(file) {
         if (fileName.endsWith('.json')) {
           const jsonData = JSON.parse(content);
           const graph = parseJSONFile(jsonData);
+          
+          // Return the full graph structure with all properties
           resolve({ 
-            graph: { nodes: graph.nodes, links: graph.links }, 
+            graph: {
+              nodes: graph.nodes || [],
+              links: graph.links || [],
+              availableModes: graph.availableModes || [],
+              version: graph.version || null,
+              allVersions: graph.allVersions || []
+            }, 
             fileName: file.name,
-            availableModes: graph.availableModes
+            availableModes: graph.availableModes || [],
+            version: graph.version || null,
+            allVersions: graph.allVersions || []
           });
         } else {
           reject(new Error('Unsupported file type. Please use .json files only.'));

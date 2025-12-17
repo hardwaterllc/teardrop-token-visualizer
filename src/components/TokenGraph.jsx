@@ -113,29 +113,101 @@ const TokenGraph = forwardRef(function TokenGraph({
     const CANVAS_CENTER_X = CANVAS_WIDTH / 2;
     const CANVAS_CENTER_Y = CANVAS_HEIGHT / 2;
 
-    // Position layer groups and their children
-    if (graph.columns.layerGroups) {
-      // Calculate horizontal spacing for layer groups
-      const layerGroupsCount = graph.columns.layerGroups.length;
-      const MIN_SPACING = 800; // Minimum spacing between layer groups for better visibility
-      const spacing = MIN_SPACING;
+    // Position version nodes first if they exist (side by side horizontally)
+    const versionNodesMap = new Map();
+    let topVersionY = null;
+    
+    if (graph.columns.versionNodes && graph.columns.versionNodes.length > 0) {
+      const versionNodes = graph.columns.versionNodes;
+      const VERSION_HORIZONTAL_SPACING = 3000; // Ample horizontal spacing between version containers
+      const VERSION_START_Y = CANVAS_CENTER_Y - 200; // Y position for version nodes (all at same height)
       
-      // Calculate total width of all layer groups
-      const totalWidth = (layerGroupsCount - 1) * spacing + NODE_WIDTH;
+      // Calculate total width needed for all version nodes
+      const totalVersionsWidth = (versionNodes.length - 1) * VERSION_HORIZONTAL_SPACING + NODE_WIDTH;
+      const startX = CANVAS_CENTER_X - totalVersionsWidth / 2;
       
-      // Center the layer groups on the canvas (both horizontally and vertically)
-      // Start X position: canvas center - half of total width
-      const startX = CANVAS_CENTER_X - totalWidth / 2;
-      // Y position: canvas center - half of node height (to center the node vertically)
-      const LAYER_Y = CANVAS_CENTER_Y - NODE_HEIGHT / 2;
-      
-      graph.columns.layerGroups.forEach((layerGroup, index) => {
-        const masterKey = `layer-${layerGroup.id}`;
-        const masterSavedPos = nodePositionsRef.current.get(masterKey);
+      versionNodes.forEach((versionNode, vIndex) => {
+        const versionKey = `version-${versionNode.id}`;
+        const versionSavedPos = nodePositionsRef.current.get(versionKey);
         
-        // Calculate X position: centered horizontally with good spacing, snapped to grid
-        const masterX = masterSavedPos?.x ?? snapToGrid(startX + index * spacing);
-        const masterY = masterSavedPos?.y ?? snapToGrid(LAYER_Y); // Centered vertically, snapped to grid
+        // Position version nodes side by side horizontally
+        const versionX = versionSavedPos?.x ?? snapToGrid(startX + vIndex * VERSION_HORIZONTAL_SPACING);
+        const versionY = versionSavedPos?.y ?? snapToGrid(VERSION_START_Y);
+        
+        if (topVersionY === null) {
+          topVersionY = versionY;
+        }
+        
+        positioned.push({
+          ...versionNode,
+          x: versionX,
+          y: versionY,
+          column: 'version',
+          isVersion: true
+        });
+        
+        versionNodesMap.set(versionNode.id, {
+          node: versionNode,
+          y: versionY,
+          x: versionX
+        });
+      });
+    }
+
+    // Position layer groups and their children, grouped by version
+    if (graph.columns.layerGroups) {
+      // Group layer groups by version
+      const layerGroupsByVersion = new Map();
+      graph.columns.layerGroups.forEach(layerGroup => {
+        // Find which version this layer group belongs to
+        let versionId = null;
+        if (graph.columns.versionNodes) {
+          const versionNode = graph.columns.versionNodes.find(vn => 
+            vn.layerGroupIds && vn.layerGroupIds.includes(layerGroup.id)
+          );
+          if (versionNode) {
+            versionId = versionNode.id;
+          }
+        }
+        
+        if (!layerGroupsByVersion.has(versionId)) {
+          layerGroupsByVersion.set(versionId, []);
+        }
+        layerGroupsByVersion.get(versionId).push(layerGroup);
+      });
+      
+      // Position layer groups within their version containers
+      const MIN_SPACING = 800; // Minimum spacing between layer groups within a version
+      const LAYER_OFFSET_FROM_VERSION = 80; // Space between version node and its layer groups
+      
+      layerGroupsByVersion.forEach((layerGroups, versionId) => {
+        const versionInfo = versionId ? versionNodesMap.get(versionId) : null;
+        const layerGroupsCount = layerGroups.length;
+        const totalWidth = (layerGroupsCount - 1) * MIN_SPACING + NODE_WIDTH;
+        // Center layer groups under their version node
+        const startX = versionInfo 
+          ? snapToGrid(versionInfo.x - totalWidth / 2 + NODE_WIDTH / 2)
+          : snapToGrid(CANVAS_CENTER_X - totalWidth / 2);
+        
+        // All versions have layer groups at the same Y position (below version nodes)
+        const LAYER_Y = topVersionY !== null
+          ? snapToGrid(topVersionY + ROW_HEIGHT + LAYER_OFFSET_FROM_VERSION)
+          : (versionInfo
+            ? snapToGrid(versionInfo.y + ROW_HEIGHT + LAYER_OFFSET_FROM_VERSION)
+            : snapToGrid(CANVAS_CENTER_Y - NODE_HEIGHT / 2));
+        
+        layerGroups.forEach((layerGroup, index) => {
+          const masterKey = `layer-${layerGroup.id}`;
+          const masterSavedPos = nodePositionsRef.current.get(masterKey);
+          
+          // Calculate X position: centered horizontally with good spacing, snapped to grid
+          const masterX = masterSavedPos?.x ?? snapToGrid(startX + index * MIN_SPACING);
+          const masterY = masterSavedPos?.y ?? snapToGrid(LAYER_Y); // Centered vertically, snapped to grid
+          
+          // Store version relationship
+          if (versionId) {
+            layerGroup.versionId = versionId;
+          }
         
         
         // Position layer group
@@ -151,8 +223,8 @@ const TokenGraph = forwardRef(function TokenGraph({
         if (collapsedGroups.has(layerGroup.id)) {
           return; // Skip to next layer group
         }
-        
-        let childYOffset = snapToGrid(masterY + ROW_HEIGHT + 12); // Start below layer group, snapped to grid
+          
+          let childYOffset = snapToGrid(masterY + ROW_HEIGHT + 12); // Start below layer group, snapped to grid
 
         // Get nodes for this layer dynamically
         const layerNodes = graph.columns[layerGroup.layer] || [];
@@ -1198,7 +1270,8 @@ const TokenGraph = forwardRef(function TokenGraph({
         }
 
         // All layer groups are top-aligned, so we don't need to update yOffset
-      });
+        }); // End of layerGroups.forEach
+      }); // End of layerGroupsByVersion.forEach
     } else {
       // Fallback: position without layer groups
       yOffset = 0;
@@ -1306,7 +1379,7 @@ const TokenGraph = forwardRef(function TokenGraph({
         }
         
         // Set up pending drag for groups/layer groups only
-        const key = node.isLayerGroup ? `layer-${nodeId}` :
+        const key = node.isVersion ? `version-${nodeId}` : node.isLayerGroup ? `layer-${nodeId}` :
                    node.isGroup ? (node.id.startsWith('category:') ? `category-${nodeId}` : `group-${nodeId}`) :
                    `${node.column}-${nodeId}`;
         const currentPos = nodePositionsRef.current.get(key) || { x: node.x, y: node.y };
@@ -1343,7 +1416,7 @@ const TokenGraph = forwardRef(function TokenGraph({
         // Store original positions of node and all children for proper relative movement
         const node = positionedNodes.find(n => n.id === nodeId);
         if (node) {
-          const key = node.isLayerGroup ? `layer-${nodeId}` :
+          const key = node.isVersion ? `version-${nodeId}` : node.isLayerGroup ? `layer-${nodeId}` :
                      node.isGroup ? (node.id.startsWith('category:') ? `category-${nodeId}` : `group-${nodeId}`) :
                      `${node.column}-${nodeId}`;
           
@@ -1760,14 +1833,14 @@ const TokenGraph = forwardRef(function TokenGraph({
         // Calculate bounds of all dragged nodes at their current positions
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
         allDraggedNodes.forEach(draggedNode => {
-          const key = draggedNode.isLayerGroup ? `layer-${draggedNode.id}` :
+          const key = draggedNode.isVersion ? `version-${draggedNode.id}` : draggedNode.isLayerGroup ? `layer-${draggedNode.id}` :
                      draggedNode.isGroup ? (draggedNode.id.startsWith('category:') ? `category-${draggedNode.id}` : `group-${draggedNode.id}`) :
                      `${draggedNode.column}-${draggedNode.id}`;
           const originalPos = dragOriginalPositionsRef.current.get(key);
           if (originalPos) {
             const currentX = originalPos.x + deltaX;
             const currentY = originalPos.y + deltaY;
-            const nodeHeight = draggedNode.isLayerGroup ? 40 : NODE_HEIGHT;
+            const nodeHeight = (draggedNode.isVersion || draggedNode.isLayerGroup) ? 40 : NODE_HEIGHT;
             
             minX = Math.min(minX, currentX);
             minY = Math.min(minY, currentY);
@@ -2119,7 +2192,7 @@ const TokenGraph = forwardRef(function TokenGraph({
             
             // Skip the rest of the positioning logic since we've already updated positions
             // But we still need to update the main node position in the ref for consistency
-            const key = node.isLayerGroup ? `layer-${nodeId}` :
+            const key = node.isVersion ? `version-${nodeId}` : node.isLayerGroup ? `layer-${nodeId}` :
                        node.isGroup ? (node.id.startsWith('category:') ? `category-${nodeId}` : `group-${nodeId}`) :
                        `${node.column}-${nodeId}`;
             nodePositionsRef.current.set(key, { x: finalX, y: finalY });
@@ -2233,7 +2306,7 @@ const TokenGraph = forwardRef(function TokenGraph({
       const finalDeltaY = finalY - dragStartPosRef.current.y;
       
       if (node) {
-        const key = node.isLayerGroup ? `layer-${nodeId}` :
+        const key = node.isVersion ? `version-${nodeId}` : node.isLayerGroup ? `layer-${nodeId}` :
                    node.isGroup ? (node.id.startsWith('category:') ? `category-${nodeId}` : `group-${nodeId}`) :
                    `${node.column}-${nodeId}`;
         
@@ -2369,7 +2442,7 @@ const TokenGraph = forwardRef(function TokenGraph({
             const finalDeltaY = finalY - dragStartPosRef.current.y;
             
             if (node) {
-              const key = node.isLayerGroup ? `layer-${nodeId}` :
+              const key = node.isVersion ? `version-${nodeId}` : node.isLayerGroup ? `layer-${nodeId}` :
                          node.isGroup ? (node.id.startsWith('category:') ? `category-${nodeId}` : `group-${nodeId}`) :
                          `${node.column}-${nodeId}`;
               
@@ -3489,6 +3562,59 @@ const TokenGraph = forwardRef(function TokenGraph({
           />
         )}
 
+        {/* Render version container backgrounds */}
+        {!focusMode && positionedNodes && positionedNodes.filter(node => node.isVersion && !node.isHidden).map(versionNode => {
+          // Find all layer groups that belong to this version
+          const versionLayerGroups = positionedNodes.filter(node => 
+            node.isLayerGroup && node.versionId === versionNode.id && !node.isHidden
+          );
+          
+          if (versionLayerGroups.length === 0) return null;
+          
+          // Calculate bounding box for version container
+          const groupXs = versionLayerGroups.map(lg => lg.x);
+          const groupYs = versionLayerGroups.map(lg => lg.y);
+          const minX = Math.min(...groupXs) - 40;
+          const maxX = Math.max(...groupXs) + NODE_WIDTH + 40;
+          const minY = versionNode.y;
+          
+          // Find the bottom-most child (need to check all children of layer groups)
+          let maxY = Math.max(...groupYs) + 40; // Start with layer group bottom
+          versionLayerGroups.forEach(lg => {
+            const lgChildren = positionedNodes.filter(n => 
+              (n.layerGroupId === lg.id || n.groupId === lg.id) && !n.isHidden
+            );
+            if (lgChildren.length > 0) {
+              const childYs = lgChildren.map(c => c.y + NODE_HEIGHT);
+              const lgMaxY = Math.max(...childYs);
+              if (lgMaxY > maxY) maxY = lgMaxY;
+            }
+          });
+          maxY += 40; // Add padding at bottom
+          
+          const containerWidth = maxX - minX;
+          const containerHeight = maxY - minY;
+          
+          return (
+            <div
+              key={`version-container-${versionNode.id}`}
+              className="version-container-background"
+              style={{
+                position: 'absolute',
+                left: `${minX}px`,
+                top: `${minY}px`,
+                width: `${containerWidth}px`,
+                height: `${containerHeight}px`,
+                backgroundColor: 'var(--opacity-pink-12)', // Faint pink background using CSS variable
+                border: '1px solid rgba(224, 0, 130, 0.15)',
+                borderRadius: '8px',
+                pointerEvents: 'none',
+                zIndex: 0
+              }}
+            />
+          );
+        })}
+
         {/* Render sidebar indicators for parent-child relationships - hide in focus mode and during drag */}
         {!focusMode && !isDraggingNodeRef.current && positionedNodes && positionedNodes.length > 0 && positionedNodes.filter(node => !node.isHidden).map(node => {
           if (node.isLayerGroup || node.isGroup) {
@@ -3534,7 +3660,7 @@ const TokenGraph = forwardRef(function TokenGraph({
               const firstChild = sortedChildren[0];
               const lastChild = sortedChildren[sortedChildren.length - 1];
               const sidebarX = node.x + 4; // Moved 8px to the right (from -4 to +4)
-              const sidebarTop = node.y + (node.isLayerGroup ? 40 : NODE_HEIGHT); // Layer groups are 40px tall
+              const sidebarTop = node.y + ((node.isVersion || node.isLayerGroup) ? 40 : NODE_HEIGHT); // Version and layer groups are 40px tall
               const sidebarHeight = lastChild.y + NODE_HEIGHT - sidebarTop;
               
               return (
@@ -3659,17 +3785,35 @@ const TokenGraph = forwardRef(function TokenGraph({
               onDoubleClick={() => {
                 // Double click: groups collapse/expand, tokens enter focus mode
                 if (!hasDraggedRef.current) {
-                  if (node.isLayerGroup || node.isGroup) {
-                    // Toggle collapse state for groups
-                    setCollapsedGroups(prev => {
-                      const newSet = new Set(prev);
-                      if (newSet.has(node.id)) {
-                        newSet.delete(node.id);
-                      } else {
-                        newSet.add(node.id);
-                      }
-                      return newSet;
-                    });
+                  if (node.isVersion || node.isLayerGroup || node.isGroup) {
+                    // Toggle collapse state for groups (version nodes collapse all layer groups)
+                    if (node.isVersion) {
+                      // Collapse/expand all layer groups when version node is double-clicked
+                      setCollapsedGroups(prev => {
+                        const newSet = new Set(prev);
+                        const allLayerGroupIds = graph.columns.layerGroups?.map(lg => lg.id) || [];
+                        const allCollapsed = allLayerGroupIds.every(id => prev.has(id));
+                        if (allCollapsed) {
+                          // Expand all
+                          allLayerGroupIds.forEach(id => newSet.delete(id));
+                        } else {
+                          // Collapse all
+                          allLayerGroupIds.forEach(id => newSet.add(id));
+                        }
+                        return newSet;
+                      });
+                    } else {
+                      // Toggle collapse state for individual groups
+                      setCollapsedGroups(prev => {
+                        const newSet = new Set(prev);
+                        if (newSet.has(node.id)) {
+                          newSet.delete(node.id);
+                        } else {
+                          newSet.add(node.id);
+                        }
+                        return newSet;
+                      });
+                    }
                   } else {
                     // Enter focus mode for tokens
                     enterFocusMode(node.id);
@@ -3680,7 +3824,7 @@ const TokenGraph = forwardRef(function TokenGraph({
               onLeave={() => onHoverNodeChange('')}
               selectedMode={selectedMode}
               style={{ opacity, zIndex }}
-              isDraggable={node.isLayerGroup || node.isGroup}
+              isDraggable={node.isVersion || node.isLayerGroup || node.isGroup}
               hasLeftConnection={hasLeftConnection}
               hasRightConnection={hasRightConnection}
             />

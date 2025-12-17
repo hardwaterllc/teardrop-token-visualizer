@@ -144,6 +144,9 @@ const TokenNode = forwardRef(function TokenNode({ node, allNodes, parentNode, is
   };
 
   const getResolvedColor = () => {
+    if (node.isVersion) {
+      return 'var(--pink-6)';
+    }
     if (node.isLayerGroup) {
       return 'var(--neutral-6)';
     }
@@ -196,6 +199,9 @@ const TokenNode = forwardRef(function TokenNode({ node, allNodes, parentNode, is
 
 
   const getNodeValue = () => {
+    if (node.isVersion) {
+      return `${node.childCount} layers`;
+    }
     if (node.isLayerGroup || node.isGroup) {
       return `${node.childCount} tokens`;
     }
@@ -315,6 +321,10 @@ const TokenNode = forwardRef(function TokenNode({ node, allNodes, parentNode, is
 
   // Determine if background is light or dark and get appropriate text color
   const getTextColor = () => {
+    // For version nodes, use light text on pink background
+    if (node.isVersion) {
+      return resolveTokenColor('text.overlay.light') || '#ffffff';
+    }
     // For layer groups and groups, use light text on dark backgrounds
     if (node.isLayerGroup || node.isGroup) {
       return resolveTokenColor('text.overlay.light') || '#ffffff';
@@ -353,7 +363,7 @@ const TokenNode = forwardRef(function TokenNode({ node, allNodes, parentNode, is
   return (
     <div
       ref={ref}
-      className={`token-node ${isSelected ? 'selected' : ''} ${isHovered ? 'hovered' : ''} ${node.isLayerGroup ? 'layer-group' : ''} ${node.isGroup ? 'group-node' : ''} ${hasParent ? 'has-parent' : ''} column-${node.column} ${isDraggable ? 'draggable' : 'not-draggable'}`}
+      className={`token-node ${isSelected ? 'selected' : ''} ${isHovered ? 'hovered' : ''} ${node.isVersion ? 'version-node' : ''} ${node.isLayerGroup ? 'layer-group' : ''} ${node.isGroup ? 'group-node' : ''} ${hasParent ? 'has-parent' : ''} column-${node.column} ${isDraggable ? 'draggable' : 'not-draggable'}`}
       style={{
         left: `${node.x}px`,
         top: `${node.y}px`,

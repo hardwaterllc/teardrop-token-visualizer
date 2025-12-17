@@ -149,6 +149,23 @@
   background: var(--neutral-7) !important;
 }
 
+.token-node.version-node {
+  font-weight: 700;
+  font-size: 16px;
+  border: 1px solid var(--pink-5);
+  background: linear-gradient(135deg, var(--pink-6) 0%, var(--pink-7) 100%) !important;
+  cursor: move;
+  padding: 10px 18px;
+  height: 40px;
+  box-shadow: 0 2px 4px rgba(224, 0, 130, 0.4);
+}
+
+.token-node.version-node:hover {
+  border-color: var(--pink-4);
+  box-shadow: 0 4px 8px rgba(224, 0, 130, 0.5), 0 0 0 1px var(--pink-4);
+  background: linear-gradient(135deg, var(--pink-5) 0%, var(--pink-6) 100%) !important;
+}
+
 .token-node.layer-group {
   font-weight: 700;
   font-size: 15px;
